@@ -1,17 +1,16 @@
 import cmath
 import numpy as np
 import scipy as scp
-import scipy.linalg as lin
 
 #the lineshape (double integral over 2-time correlation) for ohmic SD at 0K 
 #with cutoff frequency wc
 def eta(t,wc):
     return cmath.log(1+1j*wc*t)
 
-def makricoeffs(a,wc,dk,dt):
+def makricoeffs(mod,a,wc,dk,dt,ntot):
     #a is the coupling strength, the prefactor of the spectral density
     #initialize coefficients table
-    etab=np.zeros((3,dk+1),dtype=complex)
+    etab=np.array([np.zeros((dk+1+ntot+dk),dtype=complex),np.zeros((dk+1+ntot+dk),dtype=complex),np.zeros((dk+1),dtype=complex)])
     #etab will be the table of makri coeffecients that the influencece functional uses
     # and has the format:
     #[[eta_kk, eta_dk1, eta_dk2...],           (mid evolution coeffs)
@@ -26,16 +25,25 @@ def makricoeffs(a,wc,dk,dt):
         etab[0][j+1]=a*(eta((j+2)*dt,wc)-eta((j+1)*dt,wc)-eta((j+1)*dt,wc)+eta((j*dt),wc))
         etab[1][j+1]=a*(eta((j+1.5)*dt,wc)-eta((j+0.5)*dt, wc)-eta((j+1)*dt,wc)+eta(j*dt,wc))
         etab[2][j+1]=a*(eta((j+1)*dt,wc)-eta((j+0.5)*dt,wc)-eta((j+0.5)*dt,wc)+eta(j*dt,wc))
+    if mod==1:
+        for j in range(ntot+dk):
+            etab[0][dk+1+j]=a*(eta((j+1.5)*dt,wc)-eta((j+0.5)*dt,wc)-eta(dk*dt,wc)+eta((dk-1)*dt,wc))
+            etab[1][dk+1+j]=a*(eta((j+1)*dt,wc)-eta((j+0.5)*dt, wc)-eta((dk-0.5)*dt,wc)+eta((dk-1)*dt,wc))
+    else:
+        for j in range(ntot+dk):
+            etab[0][dk+1+j]=a*etab[0][dk]
+            etab[1][dk+1+j]=a*etab[1][dk]
     return etab
     
 
+    
 def freeprop(ham,dt):
     #function to create the freepropagator factor of the lambda tensor
     #for a given hamiltonian ham and timestep dt
     #l is dimension of hilbert space
     l=len(ham)
     #define unitary time evol operator
-    u=lin.expm(np.array(ham)*dt*(-1j))
+    u=scp.linalg.expm(np.array(ham)*dt*(-1j))
     #take the kronecker product of u and its conjugate transpose
     kprop=np.kron(u,u.transpose().conjugate())
     #reshapes into a 4 indice tensor
@@ -44,16 +52,17 @@ def freeprop(ham,dt):
     kprop=np.swapaxes(kprop,0,2)
     return kprop
 
-def icomp(sp,sm,sdp,sdm,dk,k,n):
+def icomp(sp,sm,sdp,sdm,dk,k,n,dkm):
     #gives a single component of discrete influence functional for a given
     #current point k, end point n, and memory span dk
     #bl is used to determine which row of ctab the makri coeffecients are taken from
     bl=int(k==dk or k==n)+int(k==dk==n)
+    bl2=k*int(dk==dkm and k>dk)
     #phi is the influence phase and the exponential of this is returned
-    phi=-(sp-sm)*(ctab[bl][dk]*sdp-ctab[bl][dk].conjugate()*sdm)
+    phi=-(sp-sm)*(ctab[bl][dk+bl2]*sdp-ctab[bl][dk+bl2].conjugate()*sdm)
     return cmath.exp(phi)
     
-def itab(eigl,dk,k,n):
+def itab(eigl,dk,k,n,dkm):
     #explicitly constructs the influence functional factors Idk(sk,sdk)
     #eigl is the list of eigenvalues of the coupled system operator 
     #(these are the values that sk and sdk can take)
@@ -71,17 +80,17 @@ def itab(eigl,dk,k,n):
         for sm in range(l):
             for sdp in range(l):
                 for sdm in range(l):
-                    tab[sdp][sdm][sp][sm]=icomp(eigl[sp],eigl[sm],eigl[sdp-bl*(sdp-sp)],eigl[sdm-bl*(sdm-sm)],dk,k,n)      
+                    tab[sdp][sdm][sp][sm]=icomp(eigl[sp],eigl[sm],eigl[sdp-bl*(sdp-sp)],eigl[sdm-bl*(sdm-sm)],dk,k,n,dkm)      
     return tab    
 
 
-def itpad(eigl,dk,k,n):
+def itpad(eigl,dk,k,n,dkm):
     #takes the rank-2 itab tensors and gives them additional dummy indices
     #to make them rank-(dk+1) then puts indices in correct order
     #in numpy language the indices are called axes
     #first store the rank-2 tensor
     l=len(eigl)
-    itp=itab(eigl,dk,k,n)
+    itp=itab(eigl,dk,k,n,dkm)
     #for dk=0,1 the tensor is already in the correct form so return it
     if dk==0 or dk==1:
         return itp
@@ -99,11 +108,12 @@ def lamtens(eigl,dkm,k,n,ham,dt):
     #together the padded influence functional factors and finally
     #multiplying in the free propagator 
     #multiplying here means element-by-element multiplication
-    tens=itpad(eigl,dkm,k,n)
+    tens=itpad(eigl,dkm,k,n,dkm)
     for j in range(0,dkm):
-        tens=np.multiply(tens,itpad(eigl,dkm-j-1,k,n))
+        tens=np.multiply(tens,itpad(eigl,dkm-j-1,k,n,dkm))
     tens=np.multiply(tens,freeprop(ham,dt))
     return tens
+    
     
 def initprop(eigl,dkm,n,ham,dt):
     #this function constructs the initializing propagator
@@ -114,10 +124,7 @@ def initprop(eigl,dkm,n,ham,dt):
     #hilbert space dimension
     l=len(eigl)
     #initialise tensor
-    prop=lamtens(eigl,1,1,n,ham,dt)
-    #i0 is the k=0 self interaction influence functional factor
-    i0=np.swapaxes(np.swapaxes(itpad(eigl,0,0,n),0,2),1,3)
-    prop=np.multiply(prop,i0)
+    prop=np.multiply(lamtens(eigl,1,1,n,ham,dt),np.einsum('ijkl->klij',itpad(eigl,0,0,0,0)))
     #successively multiplies in lambda tensor to give the exact
     #influence functional between k=0 and k=dkm
     for j in range(0,dkm-1):
@@ -144,41 +151,68 @@ def exact(eigl,dkm,ham,dt,initrho):
     #returns the final data list, ready to have the next set of data appended
     return data
 
-def quapi(eigl,dkm,ham,dt,initrho,ntot):
+def quapi(mod,eigl,dkm,ham,dt,initrho,ntot):
     #full algorithm to find data at dkm+ntot points
     #first do the dkm points that are exact and initialize data to this
     data=exact(eigl,dkm,ham,dt,initrho)
     #initialize augmented density tensor with the exact propagator to point k=dkm
     aug=np.einsum('ij...,ij...->ij...',initrho,initprop(eigl,dkm,dkm+1,ham,dt))
     aug=np.einsum('ijk...->k...',aug)
-    #define the propagor that takes aug from one point to the next
-    prop=lamtens(eigl,dkm,dkm+1,dkm+2,ham,dt)
-    #define the termination tensor
-    term=lamtens(eigl,dkm,dkm+1,dkm+1,ham,dt)
-    for j in range(ntot):
-        #first pad aug to the same size as term
-        augN=np.expand_dims(np.expand_dims(aug,-1),-1)
-        augN=np.repeat(np.repeat(augN,2,-1),2,-2)
-        #multiply in the termination tensor
-        augN=np.multiply(augN,term)
-        #successively contract indices until you are left with reduced density matrix
-        for k in range(dkm):
-            augN=np.einsum('ijk...->k...',augN)
-        #print data to check its coming out
-        print [(j+1+dkm)*dt,(augN[0][0]-augN[1][1]).real]
-        #extract pop difference and append to data
-        data.append([(j+1+dkm)*dt,(augN[0][0]-augN[1][1]).real])
-        #pad aug ready for propagation one step forward
-        aug=np.expand_dims(np.expand_dims(aug,-1),-1)
-        aug=np.repeat(np.repeat(aug,2,-1),2,-2)
-        #multiply in propagator
-        aug=np.multiply(aug,prop)
-        #contract last 2 indices to give new augmnented density tensor ready to be 
-        #terminated in the next iteration of the for loop
-        aug=np.einsum('ijk...->k...',aug)
+    if mod==0:
+        #define the propagor that takes aug from one point to the next
+        prop=lamtens(eigl,dkm,dkm+1,dkm+2,ham,dt)
+        #define the termination tensor
+        term=lamtens(eigl,dkm,dkm+1,dkm+1,ham,dt)
+    
+        for j in range(ntot):
+            #first pad aug to the same size as term
+            augN=np.expand_dims(np.expand_dims(aug,-1),-1)
+            augN=np.repeat(np.repeat(augN,2,-1),2,-2)
+            #multiply in the termination tensor
+            augN=np.multiply(augN,term)
+            #successively contract indices until you are left with reduced density matrix
+            for k in range(dkm):
+                augN=np.einsum('ijk...->k...',augN)
+            #print data to check its coming out
+            print [(j+1+dkm)*dt,(augN[0][0]-augN[1][1]).real]
+            #extract pop difference and append to data
+            data.append([(j+1+dkm)*dt,(augN[0][0]-augN[1][1]).real])
+            #pad aug ready for propagation one step forward
+            aug=np.expand_dims(np.expand_dims(aug,-1),-1)
+            aug=np.repeat(np.repeat(aug,2,-1),2,-2)
+            #multiply in propagator
+            aug=np.multiply(aug,prop)
+            #contract last 2 indices to give new augmnented density tensor ready to be 
+            #terminated in the next iteration of the for loop
+            aug=np.einsum('ijk...->k...',aug)
+    else:
+        for j in range(ntot):
+            #first pad aug to the same size as term
+            augN=np.expand_dims(np.expand_dims(aug,-1),-1)
+            augN=np.repeat(np.repeat(augN,2,-1),2,-2)
+            #multiply in the termination tensor
+            augN=np.multiply(augN,lamtens(eigl,dkm,dkm+1+j,dkm+1+j,ham,dt))
+            #successively contract indices until you are left with reduced density matrix
+            for k in range(dkm):
+                augN=np.einsum('ijk...->k...',augN)
+            #print data to check its coming out
+            print [(j+1+dkm)*dt,(augN[0][0]-augN[1][1]).real]
+            #extract pop difference and append to data
+            data.append([(j+1+dkm)*dt,(augN[0][0]-augN[1][1]).real])
+            #pad aug ready for propagation one step forward
+            aug=np.expand_dims(np.expand_dims(aug,-1),-1)
+            aug=np.repeat(np.repeat(aug,2,-1),2,-2)
+            #multiply in propagator
+            aug=np.multiply(aug,lamtens(eigl,dkm,dkm+1+j,dkm+2+j,ham,dt))
+            #contract last 2 indices to give new augmnented density tensor ready to be 
+            #terminated in the next iteration of the for loop
+            aug=np.einsum('ijk...->k...',aug)
+        
+            
     #returns data for plotting or whatever
     return data
     
+mod=1
 #test hamiltonian
 hamil=[[0,1],[1,0]]
 #test timestep delta t
@@ -191,14 +225,21 @@ wcut=4
 A=1
 #delta_k_max
 dkmax=1
+#number of steps to propagate
+nsteps=14
 #creating ctab - for ohmic spectral density at 0 temperature with cutoff frequency
 #and coupling strength A
-ctab=makricoeffs(A,wcut,dkmax,delt)
-#number of steps to propagate
-nsteps=2
+ctab=makricoeffs(mod,A,wcut,dkmax,delt,nsteps)
+
 #eigenvalues of coupled system operator
 eigs=[-1,1]
 
 #testing the algorithm- data finally stored as dat - matches perfectly with the mathematica code
-dat=quapi(eigs,dkmax,hamil,delt,rho0,nsteps)
+quapi(mod,eigs,dkmax,hamil,delt,rho0,nsteps)
+
+
+
+
+
+
 
