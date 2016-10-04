@@ -1,5 +1,5 @@
 from cmath import exp
-from numpy import array,zeros,kron,reshape,swapaxes,expand_dims,repeat,einsum
+from numpy import array,zeros,kron,reshape,swapaxes,expand_dims,repeat,einsum,eye,sum
 import time
 from scipy.linalg import expm
 import pickle
@@ -107,7 +107,9 @@ def itab(eigl,dk,k,n,dkm):
     for sd in range(l**2):
         for s in range(l**2):
             tab[sd][s]=icomp(ec[s][0],ec[s][1],ec[sd][0]-bl*(ec[sd][0]-ec[s][0]),ec[sd][1]-bl*(ec[sd][1]-ec[s][1]),dk,k,n,dkm)
-    return tab 
+    return tab
+    
+
     
 
 
@@ -263,7 +265,92 @@ def quapi(mod,eigl,eta,dkm,ham,dt,initrho,ntot,filename):
     datfilep.close()
     #deletes global variable ctab
     print "Total running time: "+str(time.time()-t0)+"\n"
+    del ctab
     return data
+
+#functions below to construct individual mpo sites
+#I have used int(a==b) to represent kronecker_delta(a,b)
+def mpostartsite(eigl,dkm,k,n,ham,dt):
+    l=len(eigl)
+    #ec is created as a list of all possible pairs of values of the pairs of west/east legs
+    #which are then inserted simultaneously into the expression for the component of the tensor
+    #so that we end up with just a single west leg and a single east leg
+    ec=zeros((l**2,l**2,2))
+    for j in range(l**2):
+        for kk in range(l**2):
+            ec[j][kk][0]=j
+            ec[j][kk][1]=kk
+    ec=ec.reshape((l**4,2))
+    #initialize the block as tab in the form required for dainius' mpo definitions (south, north,east west)
+    #here the dimension of the east leg is 1 since this is the start site
+    tab=zeros((l**2,l**2,1,l**4),dtype=complex)
+    #the combination of I0 I1 and K whose components make up the start site tensor
+    tens=itab(eigl,1,k,n,dkm)*itab(eigl,0,k,n,dkm)*freeprop(ham,dt)
+    #looping through each index and assigning values
+    for i1 in range(l**2):
+        for j1 in range(l**2):
+            for a1 in range(l**4):
+                tab[j1][i1][0][a1]=int(ec[a1][0]==i1)*int(ec[a1][1]==j1)*tens[j1][i1]
+    return tab
+
+# mpomidsite and mpoendsite constructed in the same manner as mpostartsite
+def mpomidsite(eigl,dk,dkm,k,n):
+    l=len(eigl)
+    ec=zeros((l**2,l**2,2),dtype=int)
+    for j in range(l**2):
+        for kk in range(l**2):
+            ec[j][kk][0]=j
+            ec[j][kk][1]=kk
+    ec=ec.reshape((l**4,2))
+    tab=zeros((l**2,l**2,l**4,l**4),dtype=complex)
+    for i1 in range(l**2):
+        for j1 in range(l**2):
+            for a1 in range(l**4):
+                for b1 in range(l**4):
+                    tab[j1][i1][b1][a1]=int(ec[a1][0]==ec[b1][0])*int(ec[b1][1]==i1)*int(ec[a1][1]==j1)*itab(eigl,dk,k,n,dkm)[j1][ec[b1][0]]
+    return tab
+
+def mpoendsite(eigl,dk,dkm,k,n):
+    l=len(eigl)
+    ec=zeros((l**2,l**2,2),dtype=int)
+    for j in range(l**2):
+        for kk in range(l**2):
+            ec[j][kk][0]=j
+            ec[j][kk][1]=kk
+    ec=ec.reshape((l**4,2))
+    tab=zeros((l**2,l**2,l**4,1),dtype=complex)
+    for i1 in range(l**2):
+        for j1 in range(l**2):
+            for b1 in range(l**4):
+                tab[j1][i1][b1][0]=int(i1==ec[b1][1])*itab(eigl,dk,k,n,dkm)[j1][ec[b1][0]]
+    return tab
+
+#Test stuff
+'''
+def eta(t):
+    return ln.eta_0T(t,3,1,1)
+ctab=mcoeffs(0,eta,4,1,20)
+
+con=einsum('ijkl,mnlo',mpostartsite([-1,1],2,3,4,[[0,1],[1,0]],1),mpoendsite([-1,1],2,2,3,4))
+con=swapaxes(swapaxes(sum(sum(sum(con,2),-1),0),1,2),0,2)
+con2=einsum('ijkl,mnlo',mpostartsite([-1,1],3,4,5,[[0,1],[1,0]],1),mpomidsite([-1,1],2,3,4,5))
+con2=einsum('...i,jkil',con2,mpoendsite([-1,1],3,3,4,5))
+con2=swapaxes(swapaxes(swapaxes(sum(sum(sum(sum(con2,2),-1),0),1),2,3),0,3),1,2)
+#print mpostartsite([-1,1],[[0,1],[1,0]],1).shape
+print con.shape
+print lamtens([-1,1],2,3,4,[[0,1],[1,0]],1)- con
+print con2.shape
+print lamtens([-1,1],3,4,5,[[0,1],[1,0]],1)- con2'''
+#print lamtens([-1,1],1,3,4,[[0,1],[1,0]],1)- sum(sum(mpostartsite([-1,1],[[0,1],[1,0]],1),-1),-1)
+'''con=einsum('...i,jkil->...jkl',con,mpomidsite([-1,1],2))
+print con.shape'''
+
+
+
+'''N_sites=4; defs.local_dim=4; defs.bond_dim=1; defs.opdim=16
+test=defs.mpo_block(defs.opdim,N_sites)
+print test[3].m.shape'''
+
 
 
 #Timings per data point on my laptop
