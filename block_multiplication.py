@@ -33,17 +33,62 @@ def multiply_block(mps_block, mpo_block, N_sites):
 
    #test_mode = tests if the action of Arnoldi Linear Operator 
    #is equivalent to constructing a theta matrix in Lapack
-   test_mode = True
+   test_mode = False
+
+   #required accuracy
+   required_accuracy = 1e-01
+   #if the fraction of singular vals > critical fraction, use lapack, else use arnoldi
+   threshold_frac = 0.5
 
    #Note that Python numbers its lists from 0 to N-1!!!
    for site in np.arange(N_sites):
+     
       if test_mode == True:
             test_multiply_each_site(mps_block, mpo_block, site)
-      if (site==0) or (site==1) or (site==N_sites-1):
-            lapack_multiply_each_site(mps_block, mpo_block, site, N_sites)
+
+      if (site>0):
+          #find dims of the tensor objects we're dealing with
+          Wdim_A, SNdim_A, SNdim_B, opdim_A, sdim_A, opdim_B, sdim_B = get_dims_of_mpo_mps(mps_block[site-1], mps_block[site], mpo_block[site])
+          #tot num of singular vals = min_dim(theta) = min(theta_west,theta_east)
+          nev_TOT = min(SNdim_A*Wdim_A, SNdim_B*sdim_B*opdim_B)
+          #sdim_A = num of singular vals we're trying to calculate 
+          #find what fraction of singular vals we're aiming to calculate 
+          eval_frac = sdim_A/float(nev_TOT)
+          print('fraction of singular vals to calculate', eval_frac, 'site', site)
+
+      #use lapack at site=0,1,N_sites-1
+      if (site==0):
+          lapack_multiply_each_site(mps_block, mpo_block, site, N_sites)
+          sigma_ratio = 0.0
+      elif (site==1) or (site==N_sites-1):
+          lapack_multiply_each_site(mps_block, mpo_block, site, N_sites)
+          sigma_ratio = lapack_multiply_each_site.sigma_ratio
+      #for other sites, use eval_frac to decide whether we should use arnoldi or lapack
+      elif(eval_frac > threshold_frac):
+          lapack_multiply_each_site(mps_block, mpo_block, site, N_sites)
+          sigma_ratio = lapack_multiply_each_site.sigma_ratio
       else:
-            arnoldi_multiply_each_site(mps_block, mpo_block, site)
-         
+          arnoldi_multiply_each_site(mps_block, mpo_block, site)
+          sigma_ratio = arnoldi_multiply_each_site.sigma_ratio
+
+
+
+      #test if we have achieved required accuracy
+      #stop multiply_block loop if the given bond_dim does not achieve the required accuracy
+      #proceed to the higher bond dim instead
+      if(sigma_ratio < required_accuracy):
+         multiply_block.accuracy_achieved = True
+         print('sigma ratio', sigma_ratio, 'site', site)
+         print('mult block - required accuracy achieved? ', multiply_block.accuracy_achieved, 'site', site)
+      else:
+         multiply_block.accuracy_achieved = False
+         print('sigma ratio', sigma_ratio, 'site', site)
+         print('mult block - required accuracy achieved? ', multiply_block.accuracy_achieved, 'site', site)
+         break
+
+
+
+
 
 
 
@@ -77,6 +122,9 @@ def lapack_multiply_each_site(mps_block, mpo_block, site, N_sites):
 
    global intermediate_mps
 
+   #default value
+   lapack_multiply_each_site.accuracy_achieved = True
+
    #introduce intermediate_mps
    if site==0:
       intermediate_mps = mps_site(mps_block[site].SNdim, mps_block[site].Wdim, mps_block[site].Edim*mpo_block[site].Edim)
@@ -99,6 +147,7 @@ def lapack_multiply_each_site(mps_block, mpo_block, site, N_sites):
      #construct theta matrix for svd
      theta=np.zeros((Wdim_A*SNdim_A, sdim_B*opdim_B*SNdim_B), dtype=complex)
      temp_prod=np.zeros((Wdim_A, sdim_B*opdim_B), dtype=complex)
+
      for iA in np.arange(SNdim_A):
        for iB in np.arange(SNdim_B):        
          temp_prod = np.dot(intermediate_mps.m[iA,:,:], mps_mpo_product_at_site[iB,:,:])
@@ -109,16 +158,20 @@ def lapack_multiply_each_site(mps_block, mpo_block, site, N_sites):
 
      #Post-svd: trunc bond_dim to sdim_A
 
+     #calc the ratio b/n smallest & largest singular vals
+     sigma_max = np.amax(S[0:sdim_A]); sigma_min = np.amin(S[0:sdim_A])
+     lapack_multiply_each_site.sigma_ratio = sigma_min/sigma_max
+             
      #copy U to mps_block[site-1]
      mps_block[site-1].m = np.zeros((SNdim_A, Wdim_A, sdim_A), dtype=complex)
      for i in np.arange(SNdim_A):
-        mps_block[site-1].m[i,:,:] = U[i*Wdim_A : (i+1)*Wdim_A , 0:sdim_A] 
+         mps_block[site-1].m[i,:,:] = U[i*Wdim_A : (i+1)*Wdim_A , 0:sdim_A] 
 
      #Construct new intermediate_mps at site=site & copy VH to it
      #(i.e. we shift site ---> site+1)
      intermediate_mps = mps_site(SNdim_B, sdim_A, sdim_B*opdim_B)
      for i in np.arange(SNdim_B):
-        intermediate_mps.m[i, 0:sdim_A, :] = VH[0:sdim_A , i*sdim_B*opdim_B : (i+1)*sdim_B*opdim_B]
+         intermediate_mps.m[i, 0:sdim_A, :] = VH[0:sdim_A , i*sdim_B*opdim_B : (i+1)*sdim_B*opdim_B]
 
      #absorb S to mps_block[site-1] and the new intermediate_mps at site=site
      for i in np.arange(sdim_A):
@@ -126,11 +179,13 @@ def lapack_multiply_each_site(mps_block, mpo_block, site, N_sites):
          mps_block[site-1].m[:,:,i] = mps_block[site-1].m[:,:,i]*fac
          intermediate_mps.m[:,i,:] = fac*intermediate_mps.m[:,i,:]
 
-     #print('lapack intermed mps: ', intermediate_mps.m[0,:,:], 'site=', site)
-
      #At the last site, copy intermediate_mps to mps_block[N_sites]
      if site==N_sites-1:
-       mps_block[N_sites-1].m = cp.deepcopy(intermediate_mps.m)
+         mps_block[N_sites-1].m = cp.deepcopy(intermediate_mps.m)
+
+
+
+
 
 
 
@@ -168,22 +223,29 @@ def arnoldi_multiply_each_site(mps_block, mpo_block, site):
 
    #Post-svd: trunc bond_dim to sdim_A
 
+   #calc the ratio b/n smallest & largest singular vals
+   sigma_max = np.amax(S[0:sdim_A]); sigma_min = np.amin(S[0:sdim_A])
+   arnoldi_multiply_each_site.sigma_ratio = sigma_min/sigma_max
+
    #copy U to mps_block[site-1]
    mps_block[site-1].m = np.zeros((SNdim_A, Wdim_A, sdim_A), dtype=complex)
    for i in np.arange(SNdim_A):
-      mps_block[site-1].m[i,:,:] = U[i*Wdim_A : (i+1)*Wdim_A , 0:sdim_A] 
+       mps_block[site-1].m[i,:,:] = U[i*Wdim_A : (i+1)*Wdim_A , 0:sdim_A] 
 
    #Construct new intermediate_mps at site=site & copy VH to it
    #(i.e. we shift site ---> site+1)
    intermediate_mps = mps_site(SNdim_B, sdim_A, sdim_B*opdim_B)
    for i in np.arange(SNdim_B):
-      intermediate_mps.m[i, 0:sdim_A, :] = VH[0:sdim_A , i*sdim_B*opdim_B : (i+1)*sdim_B*opdim_B]
+       intermediate_mps.m[i, 0:sdim_A, :] = VH[0:sdim_A , i*sdim_B*opdim_B : (i+1)*sdim_B*opdim_B]
 
    #absorb S to mps_block[site-1] and the new intermediate_mps at site=site
    for i in np.arange(sdim_A):
-      fac=np.sqrt(S[i])
-      mps_block[site-1].m[:,:,i] = mps_block[site-1].m[:,:,i]*fac
-      intermediate_mps.m[:,i,:] = fac*intermediate_mps.m[:,i,:]
+       fac=np.sqrt(S[i])
+       mps_block[site-1].m[:,:,i] = mps_block[site-1].m[:,:,i]*fac
+       intermediate_mps.m[:,i,:] = fac*intermediate_mps.m[:,i,:]
+
+
+
 
 
 ###########################################################################
@@ -430,9 +492,9 @@ def get_dims_of_mpo_mps(intermediate_mps, mps_in, mpo_in):
    opdim_A = mpo_in.Wdim; sdim_A = mps_in.Wdim 
    opdim_B = mpo_in.Edim; sdim_B = mps_in.Edim 
 
-   Wdim = intermediate_mps.Wdim; SNdim_A = intermediate_mps.SNdim 
+   Wdim_A = intermediate_mps.Wdim; SNdim_A = intermediate_mps.SNdim 
 
-   return Wdim, SNdim_A, SNdim_B, opdim_A, sdim_A, opdim_B, sdim_B
+   return Wdim_A, SNdim_A, SNdim_B, opdim_A, sdim_A, opdim_B, sdim_B
 
 
 

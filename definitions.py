@@ -151,6 +151,16 @@ class mps_block(mps_site, list):
              for site in np.arange(N_sites):
                 mps_copy[site].m = cp.deepcopy(np.conj(self[site].m))
 
+      def insert_mps_block(self, mps_source, N_sites): 
+          #Note that Python numbers its lists from 0 to N-1!!!
+          for site in np.arange(N_sites):
+             SNdim = mps_source[site].SNdim; Wdim = mps_source[site].Wdim; Edim = mps_source[site].Edim
+             for i in np.arange(SNdim):
+               for j in np.arange(Wdim):
+                 for k in np.arange(Edim):             
+                    self[site].m[i,j, k] = cp.deepcopy(mps_source[site].m[i,j, k])
+              #self[site].m[:,0:Wdim, 0:Edim] = cp.deepcopy(mps_source[site].m[:,0:Wdim, 0:Edim])
+
 
 
 
