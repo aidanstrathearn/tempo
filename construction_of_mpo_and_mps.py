@@ -47,7 +47,7 @@ def construct_aklt_hamiltonian(mpo_hamiltonian, N_sites):
      term_cnt = mpo_add_extra_term(mpo_hamiltonian, pre_fac, Sdn_Sz, Sup_Sz, op_site, N_sites, True, 'spin1', term_cnt)
 
      #Third part of H - constant term: (set to 0.0 for non-zero gs eval - i.e. this is just an effective offset)
-     pre_fac = 0.0*2.0/3.0
+     pre_fac = 2.0/3.0
      term_cnt = mpo_add_extra_term(mpo_hamiltonian, pre_fac, Spin.eye, Spin.eye, op_site, N_sites, False, 'spin1', term_cnt)
 
   #(NB. initially we have zero terms in the mpo_hamiltonian - opcnt=0)

@@ -31,63 +31,78 @@ Block_Lvec = None; Block_Rvec = None
 #######################################################################
 def multiply_block(mps_block, mpo_block, N_sites):
 
+   global intermediate_mps
+
    #test_mode = tests if the action of Arnoldi Linear Operator 
    #is equivalent to constructing a theta matrix in Lapack
    test_mode = False
 
    #required accuracy
-   required_accuracy = 1e-01
+   required_accuracy = 1e-03
+   #sdim increment
+   delta_sdim_A = 1
    #if the fraction of singular vals > critical fraction, use lapack, else use arnoldi
    threshold_frac = 0.5
 
    #Note that Python numbers its lists from 0 to N-1!!!
    for site in np.arange(N_sites):
      
-      if test_mode == True:
-            test_multiply_each_site(mps_block, mpo_block, site)
+     if test_mode == True:
+        test_multiply_each_site(mps_block, mpo_block, site)
 
-      if (site>0):
-          #find dims of the tensor objects we're dealing with
-          Wdim_A, SNdim_A, SNdim_B, opdim_A, sdim_A, opdim_B, sdim_B = get_dims_of_mpo_mps(mps_block[site-1], mps_block[site], mpo_block[site])
-          #tot num of singular vals = min_dim(theta) = min(theta_west,theta_east)
-          nev_TOT = min(SNdim_A*Wdim_A, SNdim_B*sdim_B*opdim_B)
-          #sdim_A = num of singular vals we're trying to calculate 
-          #find what fraction of singular vals we're aiming to calculate 
-          eval_frac = sdim_A/float(nev_TOT)
-          print('fraction of singular vals to calculate', eval_frac, 'site', site)
+     if (site==0):
+        #Simple mult at site=0, no SVD
+        lapack_multiply_each_site(mps_block, mpo_block, site, N_sites)
+     else:
+        #Loop over vals of bond_dim until we achieve the required accuracy
+        sigma_ratio = 1.0
+        while(sigma_ratio > required_accuracy):
 
-      #use lapack at site=0,1,N_sites-1
-      if (site==0):
-          lapack_multiply_each_site(mps_block, mpo_block, site, N_sites)
-          sigma_ratio = 0.0
-      elif (site==1) or (site==N_sites-1):
-          lapack_multiply_each_site(mps_block, mpo_block, site, N_sites)
-          sigma_ratio = lapack_multiply_each_site.sigma_ratio
-      #for other sites, use eval_frac to decide whether we should use arnoldi or lapack
-      elif(eval_frac > threshold_frac):
-          lapack_multiply_each_site(mps_block, mpo_block, site, N_sites)
-          sigma_ratio = lapack_multiply_each_site.sigma_ratio
-      else:
-          arnoldi_multiply_each_site(mps_block, mpo_block, site)
-          sigma_ratio = arnoldi_multiply_each_site.sigma_ratio
+           #### Find the fraction singular vals we're calculating ####
 
+           #find dims of the tensor objects we're dealing with mps_block[site-1]
+           Wdim_A, SNdim_A, SNdim_B, opdim_A, sdim_A, opdim_B, sdim_B = get_dims_of_mpo_mps(intermediate_mps, mps_block[site], mpo_block[site])
+           #tot num of singular vals = min_dim(theta) = min(theta_west,theta_east)
+           nev_TOT = min(SNdim_A*Wdim_A, SNdim_B*sdim_B*opdim_B)
+           #find what fraction of singular vals we're trying to calculate (sdim_A = num of singular vals)
+           eval_frac = sdim_A/float(nev_TOT)
+           print('fraction of singular vals to calculate', eval_frac, 'site', site)
 
+           #### Save copies of intermed_mps, mps(site), mps(site-1) for restoring later ####
+           temp_intermed_mps = intermediate_mps.m
+           temp_mps_site = mps_block[site].m
+           temp_mps_site_minus_1 = mps_block[site-1].m
+           
+           #### Perform block_mult and SVD ####
 
-      #test if we have achieved required accuracy
-      #stop multiply_block loop if the given bond_dim does not achieve the required accuracy
-      #proceed to the higher bond dim instead
-      if(sigma_ratio < required_accuracy):
-         multiply_block.accuracy_achieved = True
-         print('sigma ratio', sigma_ratio, 'site', site)
-         print('mult block - required accuracy achieved? ', multiply_block.accuracy_achieved, 'site', site)
-      else:
-         multiply_block.accuracy_achieved = False
-         print('sigma ratio', sigma_ratio, 'site', site)
-         print('mult block - required accuracy achieved? ', multiply_block.accuracy_achieved, 'site', site)
-         break
+           #use lapack at site=1,N_sites-1
+           #for other sites, use eval_frac to decide whether we should use arnoldi or lapack
+           if (site==1) or (site==N_sites-1) or (eval_frac > threshold_frac):
+              lapack_multiply_each_site(mps_block, mpo_block, site, N_sites)
+              sigma_ratio = lapack_multiply_each_site.sigma_ratio
+           else:
+              arnoldi_multiply_each_site(mps_block, mpo_block, site)
+              sigma_ratio = arnoldi_multiply_each_site.sigma_ratio
 
+           print('mult block - sigma ratio = ', sigma_ratio, 'at site', site, 'sdim_A', sdim_A)
 
+           # If we haven't achieved the required accuracy yet:
+           # Restore the pre-multiplication copies of intermed_mps, mps_block[site], mps_block[site-1]
+           # but with incremented sdim_A = sdim_A + delta_sdim_A, between site=site & site=site-1
 
+           if (sigma_ratio > required_accuracy):
+              
+              intermediate_mps = mps_site(SNdim_A, Wdim_A, (sdim_A + delta_sdim_A)*opdim_A)
+              intermediate_mps.m[0:SNdim_A, 0:Wdim_A, 0:sdim_A*opdim_A] = cp.deepcopy(temp_intermed_mps)
+
+              mps_block[site] = mps_site(SNdim_B, sdim_A + delta_sdim_A, sdim_B)
+              mps_block[site].m[0:SNdim_B, 0:sdim_A, 0:sdim_B] = cp.deepcopy(temp_mps_site)
+
+              mps_block[site-1] = mps_site(SNdim_A, Wdim_A, sdim_A + delta_sdim_A) 
+              mps_block[site-1].m[0:SNdim_A, 0:Wdim_A, 0:sdim_A] = cp.deepcopy(temp_mps_site_minus_1)
+
+           else:
+              print('mult block - required accuracy achieved with sigma ratio = ', sigma_ratio, 'at site', site)
 
 
 
@@ -121,9 +136,6 @@ def multiply_block(mps_block, mpo_block, N_sites):
 def lapack_multiply_each_site(mps_block, mpo_block, site, N_sites):
 
    global intermediate_mps
-
-   #default value
-   lapack_multiply_each_site.accuracy_achieved = True
 
    #introduce intermediate_mps
    if site==0:

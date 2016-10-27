@@ -151,15 +151,16 @@ class mps_block(mps_site, list):
              for site in np.arange(N_sites):
                 mps_copy[site].m = cp.deepcopy(np.conj(self[site].m))
 
-      def insert_mps_block(self, mps_source, N_sites): 
+      def change_dims_mps_block(self, mps_to_match, N_sites): 
           #Note that Python numbers its lists from 0 to N-1!!!
           for site in np.arange(N_sites):
-             SNdim = mps_source[site].SNdim; Wdim = mps_source[site].Wdim; Edim = mps_source[site].Edim
-             for i in np.arange(SNdim):
-               for j in np.arange(Wdim):
-                 for k in np.arange(Edim):             
-                    self[site].m[i,j, k] = cp.deepcopy(mps_source[site].m[i,j, k])
-              #self[site].m[:,0:Wdim, 0:Edim] = cp.deepcopy(mps_source[site].m[:,0:Wdim, 0:Edim])
+             #save a copy of an mps_site & its dims
+             temp_mps = cp.deepcopy(self[site].m) 
+             SNdim = self[site].SNdim; Wdim = self[site].Wdim; Edim = self[site].Edim
+             #create a new mps site with different dims (equal to thos of mps_to_match)
+             self[site] = mps_site(mps_to_match[site].SNdim, mps_to_match[site].Wdim, mps_to_match[site].Edim) 
+             #copy the old mps_site data to the new mps_site
+             self[site].m[0:SNdim, 0:Wdim, 0:Edim] = cp.deepcopy(temp_mps)
 
 
 
