@@ -41,7 +41,7 @@ print('c_norm = ', c_norm)
 psi_ket_0 = cp.deepcopy(psi_ket)
 
 #Apply mpo Hamiltonian to mps Wavefunction 
-mult.multiply_block(psi_ket, hamiltonian, N_sites)
+psi_ket = mult.multiply_block(psi_ket, hamiltonian, N_sites)
 print('Block multiplication complete ')
 
 #change dims of psi_bra & psi_ket_0 in order to match psi_ket with new dims
@@ -57,7 +57,7 @@ print('Eigenvalue = ', eval_psi/c_norm)
 
 if np.absolute(eval_psi/c_norm) > 0.001:
     print('Post-multiplication psi coefficient tensor: ')
-    setup.verify_psi_coeff_tensor(psi_ket, eval_psi/c_norm, N_sites)
+    setup.verify_psi_coeff_tensor(psi_ket_0, 1.0, N_sites)
 
-
+#eval_psi/c_norm
 

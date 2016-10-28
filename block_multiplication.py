@@ -18,7 +18,7 @@ Block_Lvec = None; Block_Rvec = None
 #  multiply_block
 #
 #  Variables:
-#  mps_block, mpo_block = input generic MPS/MPO blocks
+#  mps_block1, mpo_block1 = input generic MPS/MPO blocks
 #  N_sites = length of MPS/MPO blocks
 #
 #  Synopsis:
@@ -29,81 +29,78 @@ Block_Lvec = None; Block_Rvec = None
 #  As a final output, the original mps_block=MPS is changed to a
 #  new mps_block=MPS*MPO
 #######################################################################
-def multiply_block(mps_block, mpo_block, N_sites):
+def multiply_block(mps_block1, mpo_block1, N_sites):
 
+   from definitions import bond_dim
    global intermediate_mps
 
-   #test_mode = tests if the action of Arnoldi Linear Operator 
-   #is equivalent to constructing a theta matrix in Lapack
-   test_mode = False
-
    #required accuracy
-   required_accuracy = 1e-03
-   #sdim increment
-   delta_sdim_A = 1
+   required_accuracy = 7e-01
+   #bond_dim initial value & increment
+   chi_mps = cp.copy(bond_dim); delta_chi = 1
    #if the fraction of singular vals > critical fraction, use lapack, else use arnoldi
    threshold_frac = 0.5
 
-   #Note that Python numbers its lists from 0 to N-1!!!
-   for site in np.arange(N_sites):
+   while(True):
+
+      #Create a copy of mps_block for restoring later
+      mps_block_copy = cp.deepcopy(mps_block1) 
+
+      #Note that Python numbers its lists from 0 to N-1!!!
+      for site in np.arange(N_sites):
      
-     if test_mode == True:
-        test_multiply_each_site(mps_block, mpo_block, site)
+         if (site==0):
+             #Simple mult at site=0, no SVD
+             lapack_multiply_each_site(mps_block1, mpo_block1, site, N_sites)
+         else:
+             #### Find the fraction singular vals we're calculating ####
 
-     if (site==0):
-        #Simple mult at site=0, no SVD
-        lapack_multiply_each_site(mps_block, mpo_block, site, N_sites)
-     else:
-        #Loop over vals of bond_dim until we achieve the required accuracy
-        sigma_ratio = 1.0
-        while(sigma_ratio > required_accuracy):
-
-           #### Find the fraction singular vals we're calculating ####
-
-           #find dims of the tensor objects we're dealing with mps_block[site-1]
-           Wdim_A, SNdim_A, SNdim_B, opdim_A, sdim_A, opdim_B, sdim_B = get_dims_of_mpo_mps(intermediate_mps, mps_block[site], mpo_block[site])
-           #tot num of singular vals = min_dim(theta) = min(theta_west,theta_east)
-           nev_TOT = min(SNdim_A*Wdim_A, SNdim_B*sdim_B*opdim_B)
-           #find what fraction of singular vals we're trying to calculate (sdim_A = num of singular vals)
-           eval_frac = sdim_A/float(nev_TOT)
-           print('fraction of singular vals to calculate', eval_frac, 'site', site)
-
-           #### Save copies of intermed_mps, mps(site), mps(site-1) for restoring later ####
-           temp_intermed_mps = intermediate_mps.m
-           temp_mps_site = mps_block[site].m
-           temp_mps_site_minus_1 = mps_block[site-1].m
+             #get dims of the tensor objects involved
+             Wdim_A, SNdim_A, SNdim_B, opdim_A, sdim_A, opdim_B, sdim_B = get_dims_of_mpo_mps(intermediate_mps, mps_block1[site], mpo_block1[site])
+             #tot num of singular vals = min_dim(theta) = min(theta_west,theta_east)
+             nev_TOT = min(SNdim_A*Wdim_A, SNdim_B*sdim_B*opdim_B)
+             #find what fraction of singular vals we're trying to calculate (sdim_A = num of singular vals)
+             eval_frac = sdim_A/float(nev_TOT)
+             print('fraction of singular vals to calculate', eval_frac, 'site', site)
            
-           #### Perform block_mult and SVD ####
+             #### Perform block_mult and SVD ####
 
-           #use lapack at site=1,N_sites-1
-           #for other sites, use eval_frac to decide whether we should use arnoldi or lapack
-           if (site==1) or (site==N_sites-1) or (eval_frac > threshold_frac):
-              lapack_multiply_each_site(mps_block, mpo_block, site, N_sites)
-              sigma_ratio = lapack_multiply_each_site.sigma_ratio
-           else:
-              arnoldi_multiply_each_site(mps_block, mpo_block, site)
-              sigma_ratio = arnoldi_multiply_each_site.sigma_ratio
+             #use lapack at site=1,N_sites-1
+             #for other sites, use eval_frac to decide whether we should use arnoldi or lapack
+             if (site==1) or (site==N_sites-1) or (eval_frac > threshold_frac):
+                 lapack_multiply_each_site(mps_block1, mpo_block1, site, N_sites)
+                 sigma_ratio = lapack_multiply_each_site.sigma_ratio
+             else:
+                 arnoldi_multiply_each_site(mps_block1, mpo_block1, site)
+                 sigma_ratio = arnoldi_multiply_each_site.sigma_ratio
 
-           print('mult block - sigma ratio = ', sigma_ratio, 'at site', site, 'sdim_A', sdim_A)
+             #If we haven't achieved the required accuracy yet - break the site loop
+             #And restart the procedure with higher bond_dim
+             if (sigma_ratio > required_accuracy) and (eval_frac < 1.0):
+                 required_accuracy_achieved = False
+                 print('exiting site loop - sigma ratio = ', sigma_ratio, 'at site', site, 'sdim_A', sdim_A)
+                 break
+             else:
+                 required_accuracy_achieved = True
+                 print('continuing site loop - sigma ratio = ', sigma_ratio, 'at site', site, 'sdim_A', sdim_A)
+                 
 
-           # If we haven't achieved the required accuracy yet:
-           # Restore the pre-multiplication copies of intermed_mps, mps_block[site], mps_block[site-1]
-           # but with incremented sdim_A = sdim_A + delta_sdim_A, between site=site & site=site-1
+      #If we haven't achieved the required accuracy yet - increment bond dim of mps_block
+      if (required_accuracy_achieved == False):
+          #Re-initialize mps_block (with higher bond dim) if there's a need to increase bond_dim at any site
+          chi_mps = chi_mps + delta_chi
+          mps_block1 = mps_block(chi_mps, N_sites); mps_block1.insert_mps_block(mps_block_copy, N_sites)
+          print('mult block - required accuracy not achieved yet, increasing bond_dim to', chi_mps)
+          print(' ')
+          print(' ')
+      else:
+          print('mult block - required accuracy achieved or eval_frac = 1.0, with bond_dim = ', chi_mps)
+          print(' ')
+          print(' ')
+          break
 
-           if (sigma_ratio > required_accuracy):
-              
-              intermediate_mps = mps_site(SNdim_A, Wdim_A, (sdim_A + delta_sdim_A)*opdim_A)
-              intermediate_mps.m[0:SNdim_A, 0:Wdim_A, 0:sdim_A*opdim_A] = cp.deepcopy(temp_intermed_mps)
-
-              mps_block[site] = mps_site(SNdim_B, sdim_A + delta_sdim_A, sdim_B)
-              mps_block[site].m[0:SNdim_B, 0:sdim_A, 0:sdim_B] = cp.deepcopy(temp_mps_site)
-
-              mps_block[site-1] = mps_site(SNdim_A, Wdim_A, sdim_A + delta_sdim_A) 
-              mps_block[site-1].m[0:SNdim_A, 0:Wdim_A, 0:sdim_A] = cp.deepcopy(temp_mps_site_minus_1)
-
-           else:
-              print('mult block - required accuracy achieved with sigma ratio = ', sigma_ratio, 'at site', site)
-
+   return mps_block1
+   
 
 
 
@@ -182,6 +179,7 @@ def lapack_multiply_each_site(mps_block, mpo_block, site, N_sites):
      #Construct new intermediate_mps at site=site & copy VH to it
      #(i.e. we shift site ---> site+1)
      intermediate_mps = mps_site(SNdim_B, sdim_A, sdim_B*opdim_B)
+
      for i in np.arange(SNdim_B):
          intermediate_mps.m[i, 0:sdim_A, :] = VH[0:sdim_A , i*sdim_B*opdim_B : (i+1)*sdim_B*opdim_B]
 

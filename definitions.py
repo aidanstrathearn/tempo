@@ -2,14 +2,15 @@ import math
 import copy as cp
 import numpy as np
 
-# Declare the size parameters for MPS/MPO 
+# Declare the size parameters for MPS/MPO
 # We'll set the actual values in the main program
 
 #Local Hilbert/Liouville space dimension of a given MPS/MPO site
 local_dim=None
 #Target bond dim of MPS to which we truncate 
 #the total (untruncated) MPS bond dimension  
-bond_dim=None
+#Set default value since it will be required in block_multiplication
+bond_dim=2
 #Bond dim of MPO
 opdim=None
 
@@ -161,6 +162,15 @@ class mps_block(mps_site, list):
              self[site] = mps_site(mps_to_match[site].SNdim, mps_to_match[site].Wdim, mps_to_match[site].Edim) 
              #copy the old mps_site data to the new mps_site
              self[site].m[0:SNdim, 0:Wdim, 0:Edim] = cp.deepcopy(temp_mps)
+
+      def insert_mps_block(self, mps_to_insert, N_sites): 
+          #Note that Python numbers its lists from 0 to N-1!!!
+          for site in np.arange(N_sites):
+             #copy the old mps_site data to the new mps_site
+             SNdim = mps_to_insert[site].SNdim; Wdim = mps_to_insert[site].Wdim; Edim = mps_to_insert[site].Edim
+             self[site].m[0:SNdim, 0:Wdim, 0:Edim] = cp.deepcopy(mps_to_insert[site].m)
+
+
 
 
 
