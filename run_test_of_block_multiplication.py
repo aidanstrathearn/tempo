@@ -46,8 +46,8 @@ print('Block multiplication complete ')
 
 #change dims of psi_bra & psi_ket_0 in order to match psi_ket with new dims
 #(incremented during block_mult & SVDs)
-psi_bra.change_dims_mps_block(psi_ket, N_sites)
-psi_ket_0.change_dims_mps_block(psi_ket, N_sites)
+#psi_bra.change_dims_mps_block(psi_ket, N_sites)
+#psi_ket_0.change_dims_mps_block(psi_ket, N_sites)
 #Get c_norm for mps_blocks with incremented bond dims
 c_norm = mult.contract_two_mps(psi_ket_0, psi_bra, N_sites)
 
