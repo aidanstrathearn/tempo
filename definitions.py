@@ -147,10 +147,14 @@ class mps_block(mps_site, list):
           #Note that Python numbers its lists from 0 to N-1!!!
           if copy_conjugate==False: 
              for site in np.arange(N_sites):
-                mps_copy[site].m = cp.deepcopy(self[site].m)
+                #copy the old mps_site data to the new mps_site
+                SNdim = mps_copy[site].SNdim; Wdim = mps_copy[site].Wdim; Edim = mps_copy[site].Edim
+                mps_copy[site].m = cp.deepcopy(self[site].m[0:SNdim, 0:Wdim, 0:Edim])
           if copy_conjugate==True: 
              for site in np.arange(N_sites):
-                mps_copy[site].m = cp.deepcopy(np.conj(self[site].m))
+                #copy the old mps_site data to the new mps_site
+                SNdim = mps_copy[site].SNdim; Wdim = mps_copy[site].Wdim; Edim = mps_copy[site].Edim
+                mps_copy[site].m = cp.deepcopy(np.conj(self[site].m[0:SNdim, 0:Wdim, 0:Edim]))
 
       def change_dims_mps_block(self, mps_to_match, N_sites): 
           #Note that Python numbers its lists from 0 to N-1!!!
@@ -163,12 +167,12 @@ class mps_block(mps_site, list):
              #copy the old mps_site data to the new mps_site
              self[site].m[0:SNdim, 0:Wdim, 0:Edim] = cp.deepcopy(temp_mps)
 
-      def insert_mps_block(self, mps_to_insert, N_sites): 
+      def expand_mps_block(self, mps_expanded, N_sites): 
           #Note that Python numbers its lists from 0 to N-1!!!
           for site in np.arange(N_sites):
              #copy the old mps_site data to the new mps_site
-             SNdim = mps_to_insert[site].SNdim; Wdim = mps_to_insert[site].Wdim; Edim = mps_to_insert[site].Edim
-             self[site].m[0:SNdim, 0:Wdim, 0:Edim] = cp.deepcopy(mps_to_insert[site].m)
+             SNdim = self[site].SNdim; Wdim = self[site].Wdim; Edim = self[site].Edim
+             mps_expanded[site].m[0:SNdim, 0:Wdim, 0:Edim] = cp.deepcopy(self[site].m)
 
 
 
