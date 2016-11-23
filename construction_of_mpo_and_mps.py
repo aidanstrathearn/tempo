@@ -12,8 +12,8 @@ import block_multiplication as mult
 def construct_aklt_hamiltonian(mpo_hamiltonian, N_sites):
 
   #initialize hamiltonian sites so we can make them diagonal
-  for site in np.arange(1,N_sites-1):
-      mpo_hamiltonian[site].m = np.zeros((defs.local_dim, defs.local_dim, defs.opdim, defs.opdim), dtype=complex)
+  #for site in np.arange(1,N_sites-1):
+      #mpo_hamiltonian[site].m = np.zeros((defs.local_dim, defs.local_dim, defs.opdim, defs.opdim), dtype=complex)
 
   #pre-calculate spin terms:
   Sz_Sz = np.dot(Spin.z, Spin.z); Sup_Sup = np.dot(Spin.up, Spin.up); Sdn_Sdn = np.dot(Spin.dn, Spin.dn)
@@ -83,15 +83,21 @@ def mpo_add_extra_term(mpo_hamiltonian, pre_fac, op1, op2, op_site, N_sites, is_
    op_list = prepare_operator_list(op1, op2, op_site, N_sites, is_two_site_term, which_spin)
 
    ensure_space_exists(mpo_hamiltonian[0], term_cnt)
- 
+
    o = term_cnt+1
    op_list[0] = pre_fac*op_list[0]
    mpo_hamiltonian[0].m[:,:,0,o] = cp.deepcopy(op_list[0])
   
-   for site in np.arange(1,N_sites-1):
+   for site in np.arange(1,N_sites-1): #FIXME change back
       mpo_hamiltonian[site].m[:,:,o,o] = cp.deepcopy(op_list[site])
 
    mpo_hamiltonian[N_sites-1].m[:,:,o,0] = cp.deepcopy(op_list[N_sites-1])
+
+   #temp_op = op_list[N_sites-2]
+   #mpo_hamiltonian[N_sites-2].m[:,0,o,o] = cp.deepcopy(temp_op[:,0]) #FIXME change back
+
+   #temp_op = op_list[N_sites-1]
+   #mpo_hamiltonian[N_sites-1].m[:,0,o,0] = cp.deepcopy(temp_op[:,0]) #FIXME change back
 
    term_cnt = o
 
@@ -190,7 +196,7 @@ def normalize_mps_blocks(psi_ket, psi_bra, N_sites):
    psi_ket.copy_mps_block(psi_bra, N_sites, True)
 
    #Find normalization <psi_ket|psi_bra> = c_norm
-   c_norm = mult.contract_two_mps(psi_ket, psi_bra, N_sites)
+   c_norm = mult.contract_two_mps(psi_ket, psi_bra)
    print('c_norm proofreading within: ', c_norm)
 
    #normalize psi_ket site-by-site

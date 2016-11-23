@@ -12,20 +12,20 @@ run_aklt = True
 ### Specify the params ###
 if run_aklt == True:
   #params for AKLT model
-  N_sites=5; defs.local_dim=3; defs.bond_dim=2; defs.opdim=13*(N_sites-1)   #48
+  N_sites=5; N_mpo_sites=N_sites; defs.local_dim=3; defs.bond_dim=2; defs.opdim=13*(N_mpo_sites-1)     #13*(N_sites-1)   #48
 else:
   #params for AFM Heisenberg model
   N_sites=3; defs.local_dim=2; defs.bond_dim=2; defs.opdim=6
 
 
 ### Initialize wavefunctions & Hamiltonian
-hamiltonian=defs.mpo_block(defs.opdim, N_sites) 
+hamiltonian=defs.mpo_block(defs.opdim, N_mpo_sites, N_sites) 
 psi_ket=defs.mps_block(defs.bond_dim, N_sites)
 psi_bra=defs.mps_block(defs.bond_dim, N_sites)
 
 if run_aklt == True:
   #Construct AKLT Hamiltonian
-  setup.construct_aklt_hamiltonian(hamiltonian, N_sites)
+  setup.construct_aklt_hamiltonian(hamiltonian, N_mpo_sites)
   #Construct psi_ket and psi_bra
   setup.construct_aklt_ground_state_wavef(psi_ket, psi_bra, N_sites)
 else:
@@ -35,29 +35,29 @@ else:
   setup.construct_afm_heisenberg_ground_state_wavef_3site(psi_ket, psi_bra, N_sites)
 
 #Compute normalization
-c_norm = mult.contract_two_mps(psi_ket, psi_bra, N_sites)
+c_norm = mult.contract_two_mps(psi_ket, psi_bra)
 print('c_norm = ', c_norm)
 #Save a copy of psi_ket before block mult
 psi_ket_0 = cp.deepcopy(psi_ket)
 
 #Apply mpo Hamiltonian to mps Wavefunction 
-psi_ket = mult.multiply_block(psi_ket, hamiltonian, N_sites)
+psi_ket = mult.multiply_block(psi_ket, hamiltonian)
 print('Block multiplication complete ')
 
-#change dims of psi_bra & psi_ket_0 in order to match psi_ket with new dims
-#(incremented during block_mult & SVDs)
-#psi_bra.change_dims_mps_block(psi_ket, N_sites)
-#psi_ket_0.change_dims_mps_block(psi_ket, N_sites)
 #Get c_norm for mps_blocks with incremented bond dims
-c_norm = mult.contract_two_mps(psi_ket_0, psi_bra, N_sites)
+c_norm = mult.contract_two_mps(psi_ket_0, psi_bra)
+
+if (N_mpo_sites > N_sites):
+   psi_bra = defs.mps_block(defs.bond_dim, N_mpo_sites)
+   psi_ket.copy_mps_block(psi_bra, N_mpo_sites, copy_conjugate=True)
 
 #Obtain the energy eval
-eval_psi = mult.contract_two_mps(psi_ket, psi_bra, N_sites)
+eval_psi = mult.contract_two_mps(psi_ket, psi_bra)
 print('Eigenvalue = ', eval_psi/c_norm)
 
 if np.absolute(eval_psi/c_norm) > 0.001:
     print('Post-multiplication psi coefficient tensor: ')
-    setup.verify_psi_coeff_tensor(psi_ket_0, 1.0, N_sites)
+    setup.verify_psi_coeff_tensor(psi_ket, (eval_psi/c_norm), N_mpo_sites)
 
 #eval_psi/c_norm
 

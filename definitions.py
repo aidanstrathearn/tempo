@@ -1,4 +1,5 @@
 import math
+import sys
 import copy as cp
 import numpy as np
 
@@ -7,10 +8,8 @@ import numpy as np
 
 #Local Hilbert/Liouville space dimension of a given MPS/MPO site
 local_dim=None
-#Target bond dim of MPS to which we truncate 
-#the total (untruncated) MPS bond dimension  
-#Set default value since it will be required in block_multiplication
-bond_dim=2
+#Bond dim of initial MPS 
+bond_dim=None
 #Bond dim of MPO
 opdim=None
 
@@ -27,13 +26,27 @@ opdim=None
 ###########################################################################
 class mps_site:
 
-      def __init__(self, south_north_dim, west_dim, east_dim):
-            #define dimensions 
-            self.SNdim = south_north_dim
-            self.Wdim = west_dim
-            self.Edim = east_dim
-            #initialize tensor on each mps site (all zeros - just an example):
-            self.m = np.zeros((self.SNdim, self.Wdim, self.Edim), dtype=complex)
+      def __init__(self, south_north_dim = None, west_dim = None, east_dim = None, input_tensor = None):
+
+           if (input_tensor == None):
+               #define dimensions 
+               self.SNdim = south_north_dim
+               self.Wdim = west_dim
+               self.Edim = east_dim
+               #initialize tensor on each mps site (all zeros - just an example):
+               self.m = np.zeros((self.SNdim, self.Wdim, self.Edim), dtype=complex)
+           elif np.shape(np.shape(input_tensor)) != 3:
+               sys.exit("ERROR in mps_site - input_tensor must be a 3D object. Exiting...")
+           elif (south_north_dim != None) or (west_dim != None) or (east_dim != None):
+               sys.exit("ERROR in mps_site - if input_tensor is provided, it must be the only input of mps_site. Exiting...")
+           else:
+               #define dimensions 
+               self.SNdim = np.shape(input_tensor,1)
+               self.Wdim = np.shape(input_tensor,2)
+               self.Edim = np.shape(input_tensor,3)
+               #initialize tensor on each mps site = some input_tensor
+               self.m = input_tensor
+            
 
 
 
@@ -51,7 +64,9 @@ class mps_site:
 ########################################################################### 
 class mpo_site:
 
-      def __init__(self, south_dim, north_dim, west_dim, east_dim):
+      def __init__(self, south_dim = None, north_dim = None, west_dim = None, east_dim = None, input_tensor = None):
+
+         if (input_tensor == None):
             #define dimensions 
             self.Sdim = south_dim
             self.Ndim = north_dim
@@ -59,6 +74,18 @@ class mpo_site:
             self.Edim = east_dim
             #initialize tensor on each mps site (all zeros - just an example):
             self.m = np.zeros((self.Sdim, self.Ndim, self.Wdim, self.Edim), dtype=complex)
+         elif np.shape(np.shape(input_tensor)) != 4:
+            sys.exit("ERROR in mpo_site - input_tensor must be a 4D object. Exiting...")
+         elif (south_dim != None) or (north_dim != None) or (west_dim != None) or (east_dim != None):
+            sys.exit("ERROR in mpo_site - if input_tensor is provided, it must be the only input of mpo_site. Exiting...")
+         else:
+            #define dimensions 
+            self.Sdim = np.shape(input_tensor,1)
+            self.Ndim = np.shape(input_tensor,2)
+            self.Wdim = np.shape(input_tensor,3)
+            self.Edim = np.shape(input_tensor,4)
+            #initialize tensor on each mpo site = some input_tensor
+            self.m = input_tensor
 
 
 ##########################################################################
@@ -76,16 +103,32 @@ class mpo_site:
 class mpo_block(mpo_site, list):
 
       #the procedure w/ local_dim, op_dim should be an instance instead! (or not?)
-      def __init__(self, opdim, N_sites):
+      def __init__(self, opdim, N_sites, length_of_mps_block = None):
+         
+          #Record the length of mpo_block
+          self.N_sites = N_sites
 
           #Note that Python numbers its lists from 0 to N-1!!!
           for site in np.arange(N_sites):
-              if site == 0:
-                  self.append(mpo_site(local_dim, local_dim, 1, opdim))
-              elif site == N_sites-1:
-                  self.append(mpo_site(local_dim, local_dim, opdim, 1))
-              else:
-                  self.append(mpo_site(local_dim, local_dim, opdim, opdim))
+
+              if (length_of_mps_block == None) or (length_of_mps_block == N_sites):
+                 if site == 0:
+                    self.append(mpo_site(local_dim, local_dim, 1, opdim))
+                 elif site == N_sites-1:
+                    self.append(mpo_site(local_dim, local_dim, opdim, 1))
+                 else:
+                    self.append(mpo_site(local_dim, local_dim, opdim, opdim))
+              else: 
+                 if site == 0:
+                    self.append(mpo_site(local_dim, local_dim, 1, opdim))
+                 elif (site > length_of_mps_block-1) and (site < N_sites-1):
+                    self.append(mpo_site(local_dim, 1, opdim, opdim))
+                 elif site == N_sites-1:
+                    self.append(mpo_site(local_dim, 1, opdim, 1))
+                 else:
+                    self.append(mpo_site(local_dim, local_dim, opdim, opdim))
+
+
 
 
 ##########################################################################
@@ -119,6 +162,9 @@ class mps_block(mps_site, list):
 
       def __init__(self, bond_dim, N_sites):
 
+          #Record the length of mps_block
+          self.N_sites = N_sites
+
           #Note that Python numbers its lists from 0 to N-1!!!
           for site in np.arange(N_sites):
 
@@ -143,7 +189,8 @@ class mps_block(mps_site, list):
               #Create a new mps_site
               self.append(mps_site(local_dim, west_dim, east_dim))
 
-      def copy_mps_block(self, mps_copy, N_sites, copy_conjugate): 
+
+      def copy_mps_block(self, mps_copy, N_sites, copy_conjugate=False): 
           #Note that Python numbers its lists from 0 to N-1!!!
           if copy_conjugate==False: 
              for site in np.arange(N_sites):
@@ -156,16 +203,6 @@ class mps_block(mps_site, list):
                 SNdim = mps_copy[site].SNdim; Wdim = mps_copy[site].Wdim; Edim = mps_copy[site].Edim
                 mps_copy[site].m = cp.deepcopy(np.conj(self[site].m[0:SNdim, 0:Wdim, 0:Edim]))
 
-      def change_dims_mps_block(self, mps_to_match, N_sites): 
-          #Note that Python numbers its lists from 0 to N-1!!!
-          for site in np.arange(N_sites):
-             #save a copy of an mps_site & its dims
-             temp_mps = cp.deepcopy(self[site].m) 
-             SNdim = self[site].SNdim; Wdim = self[site].Wdim; Edim = self[site].Edim
-             #create a new mps site with different dims (equal to thos of mps_to_match)
-             self[site] = mps_site(mps_to_match[site].SNdim, mps_to_match[site].Wdim, mps_to_match[site].Edim) 
-             #copy the old mps_site data to the new mps_site
-             self[site].m[0:SNdim, 0:Wdim, 0:Edim] = cp.deepcopy(temp_mps)
 
       def expand_mps_block(self, mps_expanded, N_sites): 
           #Note that Python numbers its lists from 0 to N-1!!!
