@@ -21,7 +21,6 @@ hdim=len(eigs)
 df.local_dim=hdim**2
 df.opdim=hdim**4
 
-
 #function to create a block of mpo sites using the class in definitions.py
 def create_block(eigl,eta,ham,dt,dkm,k,n,ntot):
     #dimension of hilbert space
@@ -63,6 +62,39 @@ def create_block(eigl,eta,ham,dt,dkm,k,n,ntot):
         
     return blk
 
+def create_block2(eigl,eta,ham,dt,dkm,k,n,ntot):
+    #dimension of hilbert space
+    l=len(eigl)
+    qp.ctab=qp.mcoeffs(0,eta,dkm,dt,ntot)
+    #initialising the block
+    global blk
+    #calculating makricoeffs and storing in ctab
+    #loops each site setting equal to the tensors created with newquaPyVec.py
+    if k>dkm-1:
+        blk=df.mpo_block(l,dkm)
+        for ii in range(dkm):
+            if ii==0:
+                blk[ii].m=qp.mpostartsite(eigl,dkm,k,n,ham,dt)
+            elif ii==dkm-1:
+                blk[ii].m=qp.mpoendsite(eigl,dkm,dkm,k,n)
+            else:
+                blk[ii].m=qp.mpomidsite(eigl,ii+1,dkm,k,n)
+    elif k==1:
+        blk=df.mpo_block(l,1)
+        blk[0].m=qp.gr_mpostartsite2(eigl,dkm,k,n,ham,dt)
+    else:
+        blk=df.mpo_block(l,k)
+        for ii in range(k):
+            if ii==0:
+                blk[ii].m=qp.mpostartsite(eigl,dkm,k,n,ham,dt)
+            elif ii==k-1:
+                blk[ii].m=qp.gr_mpoendsite2(eigl,k,dkm,k,n)
+            else:
+                blk[ii].m=qp.mpomidsite(eigl,ii+1,dkm,k,n)
+                
+        
+    return blk
+
 #set up the dummy sites for the initial state mps
 def init_mps(eigl,rho,dkm):
     l=len(eigl)
@@ -74,6 +106,14 @@ def init_mps(eigl,rho,dkm):
             mpsblk[ii].m=qp.mpsdummyend(eigl)
         else:
             mpsblk[ii].m=qp.mpsdummymid(eigl)
+    return mpsblk
+    
+def init_mps2(eigl,rho,dkm):
+    l=len(eigl)
+    mpsblk=df.mps_block(l**2,1)
+    print( 'initmps', mpsblk[0].m.shape)
+    mpsblk[0].m=qp.mpsrho2(eigl,rho)
+    print( 'initmps', mpsblk[0].m.shape)
     return mpsblk
 
 #function to go through contracting the sites in a single block together using einsum
@@ -95,30 +135,61 @@ def mps_contract(block):
     #init=np.sum(np.sum(init,-1),2)
     init=np.sum(np.sum(init,-1),1)
     return init
- 
+    
+def mps_append(block):
+    le=len(block)
+    blk=df.mps_block(2,le+1)
+    for ii in range(le):
+        blk[ii].m=block[ii].m
+    blk[le].m=qp.app([-1,1])
+    
+    return blk
 
+ 
 #creating 5 mpos to propagate the system 5 steps forward with kmax=3
 #block_contract contracts all the west/east indices to form one big tensor 
-tblk1=create_block(eigs,eta,hamil,delt,3,1,5,5)
-tblk1=block_contract(tblk1)
-tblk2=create_block(eigs,eta,hamil,delt,3,2,5,5)
-tblk2=block_contract(tblk2)
+tblk1=create_block(eigs,eta,hamil,delt,3,1,2,5)
+tblk2=create_block(eigs,eta,hamil,delt,3,2,2,5)
 tblk3=create_block(eigs,eta,hamil,delt,3,3,5,5)
-tblk3=block_contract(tblk3)
 tblk4=create_block(eigs,eta,hamil,delt,3,4,5,5)
-tblk4=block_contract(tblk4)
 tblk5=create_block(eigs,eta,hamil,delt,3,5,5,5)
-tblk5=block_contract(tblk5)
+
+
+mp=init_mps([-1,1],[1,0,0,0],3)
+print np.einsum('ijk->i',mps_contract(mp))
+bm.multiply_block(mp,tblk1,3)
+print np.einsum('ijk->i',mps_contract(mp))
+bm.multiply_block(mp,tblk2,3)
+mpp=mps_contract(mp)
+print np.einsum('ijk->k',mps_contract(mp))
+'''bm.multiply_block(mp,tblk2,3)
+print np.einsum('ijk->i',mps_contract(mp))
+bm.multiply_block(mp,tblk3,3)
+print np.einsum('ijk->i',mps_contract(mp))
+bm.multiply_block(mp,tblk4,3)
+print np.einsum('ijk->i',mps_contract(mp))
+bm.multiply_block(mp,tblk5,3)
+print np.einsum('ijk->i',mps_contract(mp))
+mp=mps_contract(mp)
+mp=np.einsum('ijk->i',mp)
+print mp'''
+
 
 #set up initial mps and contract east west indices
 mp=mps_contract(init_mps([-1,1],[1,0,0,0],3))
-print mp.shape
+tblk1=block_contract(tblk1)
+tblk2=block_contract(tblk2)
+tblk3=block_contract(tblk3)
+tblk4=block_contract(tblk4)
+#tblk5=block_contract(tblk5)
+
 #propagate the whole block one step at a time
-mp=np.einsum('ijk,iljmkn',mp,tblk1)
-mp=np.einsum('ijk,iljmkn',mp,tblk2)
-mp=np.einsum('ijk,iljmkn',mp,tblk3)
-mp=np.einsum('ijk,iljmkn',mp,tblk4)
-mp=np.einsum('ijk,iljmkn',mp,tblk5)
+mp=np.einsum('lmn,iljmkn',mp,tblk1)
+mp=np.einsum('lmn,iljmkn',mp,tblk2)
+
+#mp=np.einsum('ijk,iljmkn',mp,tblk3)
+#mp=np.einsum('ijk,iljmkn',mp,tblk4)
+#mp=np.einsum('ijk,iljmkn',mp,tblk5)
 #contract indices for readout
 mp=np.einsum('ijk->i',mp)
 
@@ -127,10 +198,33 @@ print mp
 
 #same propagation with same parameters but using QUAPi, agrees perfect
 #it outputs all the data put the data point at time 0.5 is the relevent one
-qp.quapi(0,eigs,eta,3,hamil,0.1,[1,0,0,0],5,"tempocheck")
+qp.quapi(0,eigs,eta,3,hamil,0.1,[1,0,0,0],1,"tempocheck")
 f=open("tempocheck3.pickle")
 myf=pickle.load(f)
 print myf
+
+
+
+k1p=create_block2(eigs,eta,hamil,delt,3,1,2,5)
+k2p=create_block2(eigs,eta,hamil,delt,3,2,2,5)
+ist=init_mps2([-1,1],[1,0,0,0],3)
+print ist[0].m.shape
+print k1p[0].m.shape
+ist[0].m=np.einsum('ijk,limn',ist[0].m,k1p[0].m)
+print ist[0].m.shape
+ist[0].m=np.einsum('ijklm->klm',ist[0].m)
+print 'shape'
+print ist[0].m.shape
+print np.einsum('ijk->i',ist[0].m)
+ist=mps_append(ist)
+#print np.einsum('ij->i',np.einsum('ij,kilj',mps_contract(ist),block_contract(k2p)))
+
+bm.multiply_block(ist,k2p,2)
+
+print np.einsum('ij->i',mps_contract(ist))
+#print np.einsum('ij->i',mps_contract(ist))
+
+
 
 '''
 mstart=qp.gr_mpostartsite2(eigs,1,1,2,hamil,delt)

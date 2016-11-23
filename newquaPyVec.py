@@ -4,6 +4,7 @@ import time
 from scipy.linalg import expm
 import pickle
 import lineshapes as ln
+import definitions as df
 
 def mcoeffs(mod,et,dk,dt,ntot):
     #function to calculate coeffs for a given lineshape et, delta_k_max dk, timestep dt, and number of
@@ -295,7 +296,7 @@ def mpostartsite(eigl,dkm,k,n,ham,dt):
         for j1 in range(l**2):
             for a1 in range(l**4):
                 if (ec[a1][0]==i1 and ec[a1][1]==j1):
-                    tab[j1][i1][0][a1]=tens[j1][i1]
+                    tab[i1][j1][0][a1]=tens[j1][i1]
     return tab
     
 def mpomidsite(eigl,dk,dkm,k,n):
@@ -312,7 +313,7 @@ def mpomidsite(eigl,dk,dkm,k,n):
             for a1 in range(l**4):
                 for b1 in range(l**4):
                     if (ec[a1][0]==ec[b1][0] and ec[b1][1]==i1 and ec[a1][1]==j1):
-                        tab[j1][i1][b1][a1]=itab(eigl,dk,k,n,dkm)[j1][ec[b1][0]]
+                        tab[i1][j1][b1][a1]=itab(eigl,dk,k,n,dkm)[j1][ec[b1][0]]
     return tab
     
 def mpoendsite(eigl,dk,dkm,k,n):
@@ -328,7 +329,7 @@ def mpoendsite(eigl,dk,dkm,k,n):
         for j1 in range(l**2):
             for b1 in range(l**4):
                 if i1==ec[b1][1]:
-                    tab[j1][i1][b1][0]=itab(eigl,dk,k,n,dkm)[j1][ec[b1][0]]
+                    tab[i1][j1][b1][0]=itab(eigl,dk,k,n,dkm)[j1][ec[b1][0]]
     return tab
 
 def gr_mpostartsite(eigl,dkm,k,n,ham,dt):
@@ -346,7 +347,23 @@ def gr_mpostartsite(eigl,dkm,k,n,ham,dt):
         for j1 in range(l**2):
             for a1 in range(l**2):
                 if a1==j1:
-                    tab[j1][i1][0][a1]=tens[j1][i1]
+                    tab[i1][j1][0][a1]=tens[j1][i1]
+    return tab
+    
+def gr_mpostartsite2(eigl,dkm,k,n,ham,dt):
+    l=len(eigl)
+    #ec is created as a list of all possible pairs of values of the pairs of west/east legs
+    #which are then inserted simultaneously into the expression for the component of the tensor
+    #so that we end up with just a single west leg and a single east leg
+    #initialize the block as tab in the form required for dainius' mpo definitions (south, north,east west)
+    #here the dimension of the east leg is 1 since this is the start site
+    tab=zeros((l**2,l**2,1,1),dtype=complex)
+    #the combination of I0 I1 and K whose components make up the start site tensor
+    tens=itab(eigl,1,k,n,dkm)*itab(eigl,0,k,n,dkm)*freeprop(ham,dt)*itab(eigl,0,0,n,dkm).T
+    #looping through each index and assigning values
+    for i1 in range(l**2):
+        for j1 in range(l**2):
+            tab[i1][j1][0][0]=tens[j1][i1]
     return tab
     
     
@@ -364,7 +381,24 @@ def gr_mpoendsite(eigl,dk,dkm,k,n):
             for b1 in range(l**4):
                 for a1 in range(l**2):
                     if j1==a1 and i1==ec[b1][1]:
-                        tab[j1][i1][b1][a1]=itab(eigl,dk,k,n,dkm)[j1][ec[b1][0]]
+                        tab[i1][j1][b1][a1]=itab(eigl,dk,k,n,dkm)[j1][ec[b1][0]]
+    return tab
+    
+def gr_mpoendsite2(eigl,dk,dkm,k,n):
+    l=len(eigl)
+    ec=zeros((l**2,l**2,2),dtype=int)
+    for j in range(l**2):
+        for kk in range(l**2):
+            ec[j][kk][0]=j
+            ec[j][kk][1]=kk
+    ec=ec.reshape((l**4,2))
+    tab=zeros((l**2,l**2,l**4,1),dtype=complex)
+    for i1 in range(l**2):
+        for j1 in range(l**2):
+            for b1 in range(l**4):
+                for a1 in range(l**2):
+                    if i1==ec[b1][1]:
+                        tab[i1][j1][b1][0]=itab(eigl,dk,k,n,dkm)[j1][ec[b1][0]]
     return tab
 
 def gr_mpodummymid(eigl):
@@ -375,7 +409,7 @@ def gr_mpodummymid(eigl):
             for b1 in range(l**2):
                 for a1 in range(l**2):
                     if (j1==a1 and i1==a1 and j1==b1 and i1==b1):
-                        tab[j1][i1][b1][a1]=1
+                        tab[i1][j1][b1][a1]=1
     return tab
     
 def gr_mpodummyedge(eigl):
@@ -385,7 +419,17 @@ def gr_mpodummyedge(eigl):
         for j1 in range(l**2):
             for b1 in range(l**2):
                 if (j1==b1 and i1==b1):
-                    tab[j1][i1][b1][0]=1
+                    tab[i1][j1][b1][0]=1
+    return tab
+    
+def gr_mpodummyedge2(eigl):
+    l=len(eigl)
+    tab=zeros((l**2,l**2,1,1),dtype=complex)
+    for i1 in range(l**2):
+        for j1 in range(l**2):
+            for b1 in range(l**2):
+                if (j1==i1):
+                    tab[i1][j1][0][0]=1
     return tab
 
 def mpsdummymid(eigl):
@@ -407,6 +451,13 @@ def mpsdummyend(eigl):
                 tab[i1][b1][0]=1
     return tab
 
+def mpsdummyend2(eigl):
+    l=len(eigl)
+    tab=zeros((l**2,1,1),dtype=complex)
+    for i1 in range(l**2):
+        tab[i1][0][0]=1
+    return tab
+
 def mpsrho(eigl,rho):
     l=len(eigl)
     tab=zeros((l**2,1,l**2),dtype=complex)
@@ -414,6 +465,19 @@ def mpsrho(eigl,rho):
         for b1 in range(l**2):
             if i1==b1:
                 tab[i1][0][b1]=rho[i1]
+    return tab
+    
+def mpsrho2(eigl,rho):
+    l=len(eigl)
+    tab=zeros((l**2,1,1),dtype=complex)
+    for i1 in range(l**2):
+        tab[i1][0][0]=rho[i1]
+    return tab
+    
+def app(eigl):
+    l=len(eigl)
+    tab=df.mps_site(l**2,1,1)
+    tab.m[0,0,0]=1
     return tab
 #Test stuff
 
