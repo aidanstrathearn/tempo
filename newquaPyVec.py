@@ -350,22 +350,14 @@ def gr_mpostartsite(eigl,dkm,k,n,ham,dt):
                     tab[i1][j1][0][a1]=tens[j1][i1]
     return tab
     
-def gr_mpostartsite2(eigl,dkm,k,n,ham,dt):
+def gr_mpoedge(eigl):
     l=len(eigl)
-    #ec is created as a list of all possible pairs of values of the pairs of west/east legs
-    #which are then inserted simultaneously into the expression for the component of the tensor
-    #so that we end up with just a single west leg and a single east leg
-    #initialize the block as tab in the form required for dainius' mpo definitions (south, north,east west)
-    #here the dimension of the east leg is 1 since this is the start site
-    tab=zeros((l**2,l**2,1,1),dtype=complex)
-    #the combination of I0 I1 and K whose components make up the start site tensor
-    tens=itab(eigl,1,k,n,dkm)*itab(eigl,0,k,n,dkm)*freeprop(ham,dt)*itab(eigl,0,0,n,dkm).T
-    #looping through each index and assigning values
+    tab=zeros((l**2,1,l**2,1),dtype=complex)
     for i1 in range(l**2):
-        for j1 in range(l**2):
-            tab[i1][j1][0][0]=tens[j1][i1]
+        for b1 in range(l**2):
+            if (i1==b1):
+                tab[i1][0][b1][0]=1
     return tab
-    
     
 def gr_mpoendsite(eigl,dk,dkm,k,n):
     l=len(eigl)
@@ -383,6 +375,40 @@ def gr_mpoendsite(eigl,dk,dkm,k,n):
                     if j1==a1 and i1==ec[b1][1]:
                         tab[i1][j1][b1][a1]=itab(eigl,dk,k,n,dkm)[j1][ec[b1][0]]
     return tab
+
+def gr_mpoendsite3(eigl,dk,dkm,k,n):
+    l=len(eigl)
+    ec=zeros((l**2,l**2,2),dtype=int)
+    for j in range(l**2):
+        for kk in range(l**2):
+            ec[j][kk][0]=j
+            ec[j][kk][1]=kk
+    ec=ec.reshape((l**4,2))
+    tab=zeros((l**2,l**2,l**4,1),dtype=complex)
+    for i1 in range(l**2):
+        for j1 in range(l**2):
+            for b1 in range(l**4):
+                if i1==ec[b1][1]:
+                    tab[i1][j1][b1][0]=itab(eigl,dk,k,n,dkm)[j1][ec[b1][0]]
+    return tab
+    
+
+def gr_mpostartsite2(eigl,dkm,k,n,ham,dt):
+    l=len(eigl)
+    #ec is created as a list of all possible pairs of values of the pairs of west/east legs
+    #which are then inserted simultaneously into the expression for the component of the tensor
+    #so that we end up with just a single west leg and a single east leg
+    #initialize the block as tab in the form required for dainius' mpo definitions (south, north,east west)
+    #here the dimension of the east leg is 1 since this is the start site
+    tab=zeros((l**2,l**2,1,1),dtype=complex)
+    #the combination of I0 I1 and K whose components make up the start site tensor
+    tens=itab(eigl,1,k,n,dkm)*itab(eigl,0,k,n,dkm)*freeprop(ham,dt)*itab(eigl,0,0,n,dkm).T
+    #looping through each index and assigning values
+    for i1 in range(l**2):
+        for j1 in range(l**2):
+            tab[i1][j1][0][0]=tens[j1][i1]
+    return tab
+    
     
 def gr_mpoendsite2(eigl,dk,dkm,k,n):
     l=len(eigl)
@@ -421,7 +447,7 @@ def gr_mpodummyedge(eigl):
                 if (j1==b1 and i1==b1):
                     tab[i1][j1][b1][0]=1
     return tab
-    
+       
 def gr_mpodummyedge2(eigl):
     l=len(eigl)
     tab=zeros((l**2,l**2,1,1),dtype=complex)
@@ -431,6 +457,7 @@ def gr_mpodummyedge2(eigl):
                 if (j1==i1):
                     tab[i1][j1][0][0]=1
     return tab
+
 
 def mpsdummymid(eigl):
     l=len(eigl)

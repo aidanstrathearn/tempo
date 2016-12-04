@@ -44,7 +44,7 @@ Block_Lvec = None; Block_Rvec = None
 #  In mode = 'chi' we can set precision = None ---> the code will then use default values for each bond: chi = sdim_A, chi = opdim_A, etc
 #
 ##############################################################################################################################################
-def multiply_block(mps_block1, mpo_block1, which_mode='accuracy', precision=3.0e-01, delta_chi=1, eval_loop_start=None, eval_loop_end=None):
+def multiply_block(mps_block1, mpo_block1, which_mode='fraction', precision=1, delta_chi=1, eval_loop_start=None, eval_loop_end=None):
 
    global intermediate_mps
    
@@ -80,15 +80,7 @@ def multiply_block(mps_block1, mpo_block1, which_mode='accuracy', precision=3.0e
             sys.exit("ERROR in multiply_block: eval_loop_end must be a positive integer or equal to None. Exiting...")
 
 
-   #Check that ends of mps/mpo have bond_dim = 1
-   if (mps_block1[0].Wdim != 1):
-       sys.exit("ERROR in multiply_block: first site of MPS must have West dim = 1. Exiting...")
-   if (mpo_block1[0].Wdim != 1):
-       sys.exit("ERROR in multiply_block: first site of MPO must have West dim = 1. Exiting...")
-   if (mps_block1[mps_block1.N_sites - 1].Edim != 1):
-       sys.exit("ERROR in multiply_block: last site of MPS must have East dim = 1. Exiting...")
-   if (mpo_block1[mpo_block1.N_sites - 1].Edim != 1):
-       sys.exit("ERROR in multiply_block: last site of MPO must have East dim = 1. Exiting...")
+   
 
        
    #Note that Python numbers its lists from 0 to N-1!!!
@@ -125,11 +117,7 @@ def multiply_block(mps_block1, mpo_block1, which_mode='accuracy', precision=3.0e
       ##################################################################################################################################################
 
 
-   #Check that ends of output MPS have bond_dim = 1
-   if (mps_block1[0].Wdim != 1):
-       sys.exit("OUTPUT ERROR in multiply_block: first site of OUTPUT MPS must have West dim = 1. Exiting...")
-   if (mps_block1[mps_block1.N_sites - 1].Edim != 1):
-       sys.exit("OUTPUT ERROR in multiply_block: last site of OUTPUT MPS must have East dim = 1. Exiting...")
+   
 
    return mps_block1
    
@@ -168,6 +156,7 @@ def lapack_multiply_each_site(mps_block, mpo_block, site, which_mode, precision,
    #initialize intermediate_mps
    if site==0:
       intermediate_mps = mps_site(mps_block[site].SNdim, mps_block[site].Wdim, mps_block[site].Edim*mpo_block[site].Edim)
+
 
    #find dims of the tensor objects we're dealing with
    Wdim_A, SNdim_A, SNdim_B, opdim_A, sdim_A, opdim_B, sdim_B = get_dims_of_mpo_mps(intermediate_mps, mps_block[site], mpo_block[site])

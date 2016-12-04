@@ -19,7 +19,6 @@ hdim=len(eigs)
 
 #defining local and operator dimensions
 df.local_dim=hdim**2
-df.opdim=hdim**4
 
 #function to create a block of mpo sites using the class in definitions.py
 def create_block(eigl,eta,ham,dt,dkm,k,n,ntot):
@@ -27,10 +26,11 @@ def create_block(eigl,eta,ham,dt,dkm,k,n,ntot):
     l=len(eigl)
     qp.ctab=qp.mcoeffs(0,eta,dkm,dt,ntot)
     #initialising the block
-    blk=df.mpo_block(l,dkm)
+    
     #calculating makricoeffs and storing in ctab
     #loops each site setting equal to the tensors created with newquaPyVec.py
     if k>dkm-1:
+        blk=df.mpo_block(l**4,dkm)
         for ii in range(dkm):
             if ii==0:
                 blk[ii].m=qp.mpostartsite(eigl,dkm,k,n,ham,dt)
@@ -39,39 +39,63 @@ def create_block(eigl,eta,ham,dt,dkm,k,n,ntot):
             else:
                 blk[ii].m=qp.mpomidsite(eigl,ii+1,dkm,k,n)
     elif k==1:
-        for ii in range(dkm):
-            if ii==0:
-                blk[ii].m=qp.gr_mpostartsite(eigl,dkm,k,n,ham,dt)
-            elif ii==dkm-1:
-                blk[ii].m=qp.gr_mpodummyedge(eigl)
-            else:
-                blk[ii].m=qp.gr_mpodummymid(eigl)
+        blk=df.mpo_block(l**4,2)
+        blk[0].m=qp.gr_mpostartsite(eigl,dkm,k,n,ham,dt)
+        blk[0].Sdim=l**2
+        blk[0].Ndim=l**2
+        blk[0].Wdim=1
+        blk[0].Edim=l**2
+        blk[1].m=qp.gr_mpoedge(eigl)
+        blk[1].Sdim=l**2
+        blk[1].Ndim=1
+        blk[1].Wdim=l**2
+        blk[1].Edim=1
+
     else:
-        for ii in range(dkm):
+        blk=df.mpo_block(l**4,k+1)
+        for ii in range(k+1):
             if ii==0:
                 blk[ii].m=qp.mpostartsite(eigl,dkm,k,n,ham,dt)
             elif ii==k-1:
                 blk[ii].m=qp.gr_mpoendsite(eigl,k,dkm,k,n)
-            elif ii==dkm-1:
-                blk[ii].m=qp.gr_mpodummyedge(eigl)
+                blk[ii].Sdim=l**2
+                blk[ii].Ndim=l**2
+                blk[ii].Wdim=l**4
+                blk[ii].Edim=l**2
+            elif ii==k:
+                blk[ii].m=qp.gr_mpoedge(eigl)
+                blk[ii].Sdim=l**2
+                blk[ii].Ndim=1
+                blk[ii].Wdim=l**2
+                blk[ii].Edim=1
             elif ii<k-1:
                 blk[ii].m=qp.mpomidsite(eigl,ii+1,dkm,k,n)
-            else:
-                blk[ii].m=qp.gr_mpodummymid(eigl)
-                
-        
     return blk
+    
+def inmps(rho):
+    lsq=len(rho)
+    df.local_dim=lsq
+    inten=np.zeros((lsq,1,1),dtype=complex)
+    for j in range(lsq):
+        inten[j][0][0]=rho[j]
+
+    mpsblk=df.mps_block(1,1)
+    mpsblk[0].m=inten
+    mpsblk[0].SNdim=lsq
+    mpsblk[0].Wdim=1
+    mpsblk[0].Edim=1
+    return mpsblk
 
 def create_block2(eigl,eta,ham,dt,dkm,k,n,ntot):
     #dimension of hilbert space
     l=len(eigl)
     qp.ctab=qp.mcoeffs(0,eta,dkm,dt,ntot)
     #initialising the block
-    global blk
+    
     #calculating makricoeffs and storing in ctab
     #loops each site setting equal to the tensors created with newquaPyVec.py
     if k>dkm-1:
-        blk=df.mpo_block(l,dkm)
+        blk=df.mpo_block(l**4,dkm)
         for ii in range(dkm):
             if ii==0:
                 blk[ii].m=qp.mpostartsite(eigl,dkm,k,n,ham,dt)
@@ -80,19 +104,26 @@ def create_block2(eigl,eta,ham,dt,dkm,k,n,ntot):
             else:
                 blk[ii].m=qp.mpomidsite(eigl,ii+1,dkm,k,n)
     elif k==1:
-        blk=df.mpo_block(l,1)
-        blk[0].m=qp.gr_mpostartsite2(eigl,dkm,k,n,ham,dt)
+        blk=df.mpo_block(l**4,k)
+        blk[0].m=qp.gr_mpostartsite(eigl,dkm,k,n,ham,dt)
+        blk[0].Sdim=l**2
+        blk[0].Ndim=l**2
+        blk[0].Wdim=1
+        blk[0].Edim=l**2
+
     else:
-        blk=df.mpo_block(l,k)
+        blk=df.mpo_block(l**4,k)
         for ii in range(k):
             if ii==0:
                 blk[ii].m=qp.mpostartsite(eigl,dkm,k,n,ham,dt)
             elif ii==k-1:
-                blk[ii].m=qp.gr_mpoendsite2(eigl,k,dkm,k,n)
-            else:
+                blk[ii].m=qp.gr_mpoendsite(eigl,k,dkm,k,n)
+                blk[ii].Sdim=l**2
+                blk[ii].Ndim=l**2
+                blk[ii].Wdim=l**4
+                blk[ii].Edim=l**2
+            elif ii<k-1:
                 blk[ii].m=qp.mpomidsite(eigl,ii+1,dkm,k,n)
-                
-        
     return blk
 
 #set up the dummy sites for the initial state mps
@@ -145,16 +176,68 @@ def mps_append(block):
     
     return blk
 
- 
+def imps(rho):
+    lsq=len(rho)
+    df.local_dim=lsq
+    inten=np.zeros((lsq,1,1),dtype=complex)
+    for j in range(lsq):
+        inten[j][0][0]=rho[j]
+
+    mpsblk=df.mps_block(1,1)
+    mpsblk[0].m=inten
+    mpsblk[0].SNdim=lsq
+    mpsblk[0].Wdim=1
+    mpsblk[0].Edim=1
+    return mpsblk
+####################################################################################################
+############################################################################################
 #creating 5 mpos to propagate the system 5 steps forward with kmax=3
 #block_contract contracts all the west/east indices to form one big tensor 
-tblk1=create_block(eigs,eta,hamil,delt,3,1,2,5)
-tblk2=create_block(eigs,eta,hamil,delt,3,2,2,5)
-tblk3=create_block(eigs,eta,hamil,delt,3,3,5,5)
-tblk4=create_block(eigs,eta,hamil,delt,3,4,5,5)
+rr=[1,0,0,0]
+tblk1=create_block(eigs,eta,hamil,delt,3,1,3,5)
+tblk2=create_block2(eigs,eta,hamil,delt,3,2,3,5)
+tblk3=create_block2(eigs,eta,hamil,delt,3,3,3,5)
+tblk4=create_block(eigs,eta,hamil,delt,2,4,4,5)
 tblk5=create_block(eigs,eta,hamil,delt,3,5,5,5)
 
 
+mp0=np.einsum('ijkl,j',tblk1[0].m,rr)
+mp1=np.einsum('ijkl->ikl',tblk1[1].m)
+
+print mp0.shape
+print mp1.shape
+
+df.local_dim=4
+mps_s=df.mps_block(4,2)
+mps_s[0].m=mp0
+mps_s[1].m=mp1
+
+bm.multiply_block(mps_s,tblk2)
+
+print mps_s[0].m.shape
+print mps_s[1].m.shape
+
+mps_s2=df.mps_block(4,3)
+mps_s2[0].m=mps_s[0].m
+mps_s2[1].m=mps_s[1].m
+mps_s2[2].m=mp1
+
+bm.multiply_block(mps_s2,tblk3)
+
+print np.einsum('ij->i',np.einsum('ijkl->ik',np.einsum('ijk,lkn',mps_s[0].m,mps_s[1].m)))
+
+print np.einsum('ijkl->i',np.einsum('ijk,lkm',np.einsum('ijkl->ikl',np.einsum('ijk,lkn',mps_s2[0].m,mps_s2[1].m)),mps_s2[2].m))
+
+#same propagation with same parameters but using QUAPi, agrees perfect
+#it outputs all the data put the data point at time 0.5 is the relevent one
+qp.quapi(0,eigs,eta,3,hamil,0.1,[1,0,0,0],5,"tempocheck")
+f=open("tempocheck3.pickle")
+myf=pickle.load(f)
+print myf
+
+################################################################################################
+################################################################################################
+'''
 mp=init_mps([-1,1],[1,0,0,0],3)
 print np.einsum('ijk->i',mps_contract(mp))
 bm.multiply_block(mp,tblk1,3)
@@ -162,7 +245,8 @@ print np.einsum('ijk->i',mps_contract(mp))
 bm.multiply_block(mp,tblk2,3)
 mpp=mps_contract(mp)
 print np.einsum('ijk->k',mps_contract(mp))
-'''bm.multiply_block(mp,tblk2,3)
+
+bm.multiply_block(mp,tblk2,3)
 print np.einsum('ijk->i',mps_contract(mp))
 bm.multiply_block(mp,tblk3,3)
 print np.einsum('ijk->i',mps_contract(mp))
@@ -172,7 +256,7 @@ bm.multiply_block(mp,tblk5,3)
 print np.einsum('ijk->i',mps_contract(mp))
 mp=mps_contract(mp)
 mp=np.einsum('ijk->i',mp)
-print mp'''
+print mp
 
 
 #set up initial mps and contract east west indices
@@ -194,17 +278,17 @@ mp=np.einsum('lmn,iljmkn',mp,tblk2)
 mp=np.einsum('ijk->i',mp)
 
 #display density matrix
-print mp
+print mp'''
 
 #same propagation with same parameters but using QUAPi, agrees perfect
 #it outputs all the data put the data point at time 0.5 is the relevent one
-qp.quapi(0,eigs,eta,3,hamil,0.1,[1,0,0,0],1,"tempocheck")
-f=open("tempocheck3.pickle")
-myf=pickle.load(f)
-print myf
+#qp.quapi(0,eigs,eta,3,hamil,0.1,[1,0,0,0],1,"tempocheck")
+#f=open("tempocheck3.pickle")
+#myf=pickle.load(f)
+#print myf
 
 
-
+'''
 k1p=create_block2(eigs,eta,hamil,delt,3,1,2,5)
 k2p=create_block2(eigs,eta,hamil,delt,3,2,2,5)
 ist=init_mps2([-1,1],[1,0,0,0],3)
@@ -226,24 +310,24 @@ print np.einsum('ij->i',mps_contract(ist))
 
 
 
-'''
+
 mstart=qp.gr_mpostartsite2(eigs,1,1,2,hamil,delt)
 print mstart.shape
 mstart=np.sum(np.sum(mstart,-1),-1)
 print tblk1-qp.initprop(eigs,1,2,hamil,delt)
 print mstart.shape
-'''
 
-'''tblk=np.einsum('ijklmn->ijlm',block_contract(tblk))
+
+tblk=np.einsum('ijklmn->ijlm',block_contract(tblk))
 mp[0].m=np.einsum('ijk->ik',mp[0].m)
 mp[1].m=np.einsum('ijk->ij',mp[1].m)
 mp2=np.einsum('ij,kj',mp[0].m,mp[1].m)
 mp2=np.einsum('ijkl,ik',tblk,mp2)
 mp2=np.einsum('ij->i',mp2)
-print mp2'''
+print mp2
 #lam_mat should now be the full rank-2dk propagator - (actually rank-(2dk+2).. the further 2 ranks are 'null'
 #west/east legs of the start/end sites respectively)
-'''lam_mat=block_contract(tblk)
+lam_mat=block_contract(tblk)
 
 lam_mat=sum(sum(lam_mat,2),-1)
 lam_mat=np.swapaxes(lam_mat,0,-1)
