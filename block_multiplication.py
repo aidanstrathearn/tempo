@@ -3,137 +3,7 @@ import numpy as np
 import copy as cp
 import sys
 from scipy.sparse.linalg import svds, LinearOperator
-from definitions import mps_block, mpo_block, mps_site, mpo_site
-
-#Global MPS/MPO variables needed in Arnoldi SVD (called iteratively inside arnoldi svd routine):
-intermediate_mps = None
-mpoX = None; mpsX = None
-#Module level definitions of matrices/vecs needed in Arnoldi SVD (called iteratively inside arnoldi svd routine):
-Block_Ltemp = None; Block_Rtemp = None
-Block_Lvec = None; Block_Rvec = None
-
-
-##############################################################################################################################################
-#
-#  multiply_block
-#
-#  Variables:
-#  mps_block1, mpo_block1 = input generic MPS/MPO blocks
-#  N_sites = length of MPS/MPO blocks
-#
-#  Synopsis:
-#  Sweep over all sites, multiplying MPS & MPO blocks site-by-site. 
-#  Near the ends of chain (smaller tensors) - use lapack SVD
-#  Deeper within the chain (larger tensors) - use arnoldi SVD 
-#
-#  As a final output, the original mps_block=MPS is changed to a
-#  new mps_block=MPS*MPO
-#
-#  Different modes in multiply_block: 'accuracy', 'chi', 'fraction'
-#
-#  Precision = required_accuracy in 'accuracy' mode
-#            = fraction of singular vals to calculate in 'fraction' mode 
-#            = bond_dim in 'chi' mode
-#
-#  eval_loop_start/end input only matters if which_mode='accuracy'
-#  otherwise, they're just set automatically.
-#
-#  Note that the actual eval_frac might be slightly different from the input (requested) eval_frac (e.g. 0.5555 or 0.6666 instead of 0.51)
-#  This is because eval_frac*nev_max is rounded to the nearest integer (sigma_dim = number of singular vals must be integer after all)
-#
-#  In mode = 'chi' we can set precision = None ---> the code will then use default values for each bond: chi = sdim_A, chi = opdim_A, etc
-#
-##############################################################################################################################################
-def multiply_block(mps_block1, mpo_block1, which_mode='accuracy', precision=3.0e-01, delta_chi=1, eval_loop_start=None, eval_loop_end=None):
-
-   global intermediate_mps
-   
-   #The code currently works in cases where MPS_length <= MPO_length
-   if (mps_block1.N_sites > mpo_block1.N_sites):
-        sys.exit("ERROR in multiply_block: mpo_block should be equal to or longer than mps_block. Exiting...")
-
-   #Sanity check of the input
-   if (which_mode != 'accuracy'):
-     if (which_mode != 'chi'):
-        if (which_mode != 'fraction'):
-           sys.exit("ERROR in multiply_block: which_mode must be 'accuracy', 'chi', or 'fraction'. Exiting...")
-
-   #Sanity check of the input
-   if (which_mode == "accuracy") or (which_mode == "fraction"):  
-      #Note that both [fraction of evals] and [accuracy = ratio of smallest & largest sigma] must be between 0 and 1
-      if (precision < 0) or (precision > 1) or (precision == None):
-          sys.exit("ERROR in multiply_block: precision must be between 0 and 1. Exiting...")
-   elif (which_mode == "chi"):
-      if not (precision == None):
-         if not isinstance(precision,int) or not (precision > 0): 
-            sys.exit("ERROR in multiply_block: precision must be a positive integer or equal to None. Exiting...")
-                
-   #Sanity check of the input
-   if which_mode == "accuracy":
-
-      if not (eval_loop_start == None):
-         if not isinstance(eval_loop_start,int) or not (eval_loop_start > 0):
-            sys.exit("ERROR in multiply_block: eval_loop_start must be a positive integer or equal to None. Exiting...")
-
-      if not (eval_loop_end == None): 
-         if not isinstance(eval_loop_end,int) or not (eval_loop_end > 0):
-            sys.exit("ERROR in multiply_block: eval_loop_end must be a positive integer or equal to None. Exiting...")
-
-
-   #Check that ends of mps/mpo have bond_dim = 1
-   if (mps_block1[0].Wdim != 1):
-       sys.exit("ERROR in multiply_block: first site of MPS must have West dim = 1. Exiting...")
-   if (mpo_block1[0].Wdim != 1):
-       sys.exit("ERROR in multiply_block: first site of MPO must have West dim = 1. Exiting...")
-   if (mps_block1[mps_block1.N_sites - 1].Edim != 1):
-       sys.exit("ERROR in multiply_block: last site of MPS must have East dim = 1. Exiting...")
-   if (mpo_block1[mpo_block1.N_sites - 1].Edim != 1):
-       sys.exit("ERROR in multiply_block: last site of MPO must have East dim = 1. Exiting...")
-
-       
-   #Note that Python numbers its lists from 0 to N-1!!!
-   for site in np.arange(mpo_block1.N_sites):
-
-       #Verify that MPS/MPO have correct South & North dims 
-       if (site < mps_block1.N_sites):
-          if (mpo_block1[site].Ndim == 1):
-              print('Error at site = ', site)
-              sys.exit("ERROR in multiply_block: mpo_block has been set up incorrectly - should have North dim > 1. Exiting...")
-          if (mpo_block1[site].Sdim == 1):
-              print('Error at site = ', site)
-              sys.exit("ERROR in multiply_block: mpo_block has been set up incorrectly - should have South dim > 1. Exiting...")
-          if (mps_block1[site].SNdim == 1):
-              print('Error at site = ', site)
-              sys.exit("ERROR in multiply_block: mpo_block has been set up incorrectly - should have South-North dim > 1. Exiting...")
-
-       ############## PERFORM BLOCK MULTIPLICATION AND SVD #############################################################################################
-    
-       if (site == 0):
-           #Simple mult at site=0, no SVD
-           lapack_multiply_each_site(mps_block1, mpo_block1, site, which_mode, precision, eval_loop_start, eval_loop_end)
-       else:
-           if (site == 1) or (site == mps_block1.N_sites - 1):
-                #use lapack at site=1,N_sites-1
-                lapack_multiply_each_site(mps_block1, mpo_block1, site, which_mode, precision, eval_loop_start, eval_loop_end)
-           elif (site > mps_block1.N_sites - 1):
-                #add the free mpo sites to mps
-                sweep_over_free_mpo_sites(mps_block1, mpo_block1, site, which_mode, precision, eval_loop_start, eval_loop_end)
-           else:
-                #on other sites, use arnoldi by default, but switch to lapack if eval_frac is too large (see arnoldi_multiply_each_site function)
-                arnoldi_multiply_each_site(mps_block1, mpo_block1, site, which_mode, precision, delta_chi, eval_loop_start, eval_loop_end)
-
-      ##################################################################################################################################################
-
-
-   #Check that ends of output MPS have bond_dim = 1
-   if (mps_block1[0].Wdim != 1):
-       sys.exit("OUTPUT ERROR in multiply_block: first site of OUTPUT MPS must have West dim = 1. Exiting...")
-   if (mps_block1[mps_block1.N_sites - 1].Edim != 1):
-       sys.exit("OUTPUT ERROR in multiply_block: last site of OUTPUT MPS must have East dim = 1. Exiting...")
-
-   return mps_block1
-   
-
+import definitions as defs
 
 
 ###########################################################################
@@ -160,18 +30,10 @@ def multiply_block(mps_block1, mpo_block1, which_mode='accuracy', precision=3.0e
 #  5)Write sqrt(S)*VH to form the new intermediate_mps at site=site
 #   
 ############################################################################
-def lapack_multiply_each_site(mps_block, mpo_block, site, which_mode, precision, eval_loop_start, eval_loop_end):
-
-   global intermediate_mps
-   global mpoX, mpsX
-
-   #initialize intermediate_mps
-   if site==0:
-      intermediate_mps = mps_site(mps_block[site].SNdim, mps_block[site].Wdim, mps_block[site].Edim*mpo_block[site].Edim)
+def lapack_multiply_each_site(mps_block, mpo_block, intermediate_mps, site, which_mode, precision, eval_loop_start, eval_loop_end):
 
    #find dims of the tensor objects we're dealing with
-   Wdim_A, SNdim_A, SNdim_B, opdim_A, sdim_A, opdim_B, sdim_B = get_dims_of_mpo_mps(intermediate_mps, mps_block[site], mpo_block[site])
-   mpoX=mpo_block[site]; mpsX=mps_block[site]
+   Wdim_A, SNdim_A, SNdim_B, opdim_A, sdim_A, opdim_B, sdim_B = get_dims_of_mpo_mps(intermediate_mps, mps_block.data[site], mpo_block.data[site])
 
    #Multiply mps & mpo at site=site
    mps_mpo_product_at_site = np.zeros((SNdim_B, sdim_A*opdim_A, sdim_B*opdim_B), dtype=complex)
@@ -179,11 +41,11 @@ def lapack_multiply_each_site(mps_block, mpo_block, site, which_mode, precision,
      for sB in np.arange(sdim_B):
        for oA in np.arange(opdim_A):
          for sA in np.arange(sdim_A):
-            mps_mpo_product_at_site[:, sA + oA*sdim_A, sB + oB*sdim_B] = np.dot(mpo_block[site].m[:,:,oA,oB], mps_block[site].m[:,sA,sB])
+            mps_mpo_product_at_site[:, sA + oA*sdim_A, sB + oB*sdim_B] = np.dot(mpo_block.data[site].m[:,:,oA,oB], mps_block.data[site].m[:,sA,sB])
    
    if site==0:
      #at site=0 initialize intermediate_mps & move to the next step
-     intermediate_mps.m = cp.deepcopy(mps_mpo_product_at_site)
+     intermediate_mps.update_site(input_tensor=mps_mpo_product_at_site)
    else:
      #construct theta matrix for svd
      theta=np.zeros((Wdim_A*SNdim_A, sdim_B*opdim_B*SNdim_B), dtype=complex)
@@ -201,15 +63,16 @@ def lapack_multiply_each_site(mps_block, mpo_block, site, which_mode, precision,
 
      ##### PERFORM LAPACK SVD ##########
      print('starting LAPACK SVD at site = ', site)
-     U, S, VH, sigma_dim = perform_lapack_svd(theta, which_mode, precision, eval_loop_start, eval_loop_end, current_chi, nev_max)
+     U, S, VH = perform_lapack_svd(theta, which_mode, precision, eval_loop_start, eval_loop_end, current_chi, nev_max)
      
      #Copy back SVD results to mps_block
-     copy_back_svd_results(mps_block, mpo_block, site, U, S, VH, sigma_dim)      
+     intermediate_mps = copy_back_svd_results(mps_block, mpo_block, intermediate_mps, site, U, S, VH)      
 
      #At the last site, copy intermediate_mps to mps_block[N_sites-1]
      if site == (mps_block.N_sites-1):
-         mps_block[mps_block.N_sites-1] = mps_site(SNdim_B, sigma_dim, sdim_B*opdim_B)
-         mps_block[mps_block.N_sites-1].m = cp.deepcopy(intermediate_mps.m)
+         mps_block.data[mps_block.N_sites-1].update_site(input_tensor=intermediate_mps.m)
+   
+   return intermediate_mps
 
 
 
@@ -249,8 +112,10 @@ def perform_lapack_svd(theta, which_mode, precision, eval_loop_start, eval_loop_
 
           print('LAPACK completed, number of singular vals: ', sigma_dim, 'eval frac = ', sigma_dim/float(nev_max))
           print(' ')
+
           #return svd matrices & exit the loop
-          return U, S, VH, sigma_dim
+          U = U[:, 0:sigma_dim]; VH = VH[0:sigma_dim, :]; S = S[0:sigma_dim]
+          return U, S, VH
      
      elif (which_mode == 'accuracy'):
           #If eval_loop_start > eval_loop_end ---> set eval_loop_start = eval_loop_end
@@ -276,8 +141,9 @@ def perform_lapack_svd(theta, which_mode, precision, eval_loop_start, eval_loop_
                  print('LAPACK required accuracy achieved or eval_frac = 1.0 with sigma_dim = : ', sigma_dim)
                  print(' ')
                  #return svd matrices & exit the loop
-                 return U, S, VH, sigma_dim
-                 break
+                 U = U[:, 0:sigma_dim]; VH = VH[0:sigma_dim, :]; S = S[0:sigma_dim]
+                 return U, S, VH
+
 
 
 
@@ -289,32 +155,32 @@ def perform_lapack_svd(theta, which_mode, precision, eval_loop_start, eval_loop_
 #       
 #
 ############################################################################
-def copy_back_svd_results(mps_block, mpo_block, site, U, S, VH, sigma_dim):
-
-   global intermediate_mps
+def copy_back_svd_results(mps_block, mpo_block, intermediate_mps, site, U, S, VH):
 
    #find dims of the tensor objects we're dealing with
-   Wdim_A, SNdim_A, SNdim_B, opdim_A, sdim_A, opdim_B, sdim_B = get_dims_of_mpo_mps(intermediate_mps, mps_block[site], mpo_block[site])
+   Wdim_A, SNdim_A, SNdim_B, opdim_A, sdim_A, opdim_B, sdim_B = get_dims_of_mpo_mps(intermediate_mps, mps_block.data[site], mpo_block.data[site])
 
    #copy U to mps_block[site-1]
-   mps_block[site-1] = mps_site(SNdim_A, Wdim_A, sigma_dim)
+   mps_block.data[site-1].update_site(SNdim_A, Wdim_A, len(S))
    #print('sigma_dim is: ', sigma_dim)
    #print('shape of mps_block(site-1): ', np.shape(mps_block[site-1].m))
    #print('shape of U is: ', np.shape(U))
    for i in np.arange(SNdim_A):
-       mps_block[site-1].m[i,:,0:sigma_dim] = U[i*Wdim_A : (i+1)*Wdim_A , 0:sigma_dim] 
+       mps_block.data[site-1].m[i,:,:] = U[i*Wdim_A : (i+1)*Wdim_A , :] 
 
    #Construct new intermediate_mps at site=site & copy VH to it
    #(i.e. we shift by site ---> site+1)
-   intermediate_mps = mps_site(SNdim_B, sigma_dim, sdim_B*opdim_B)
+   intermediate_mps.update_site(SNdim_B, len(S), sdim_B*opdim_B)
    for i in np.arange(SNdim_B):
-       intermediate_mps.m[i, 0:sigma_dim, :] = VH[0:sigma_dim , i*sdim_B*opdim_B : (i+1)*sdim_B*opdim_B]
+       intermediate_mps.m[i, :, :] = VH[: , i*sdim_B*opdim_B : (i+1)*sdim_B*opdim_B]
 
    #absorb S to mps_block[site-1] and the new intermediate_mps at site=site
-   for i in np.arange(sigma_dim):
+   for i in np.arange(len(S)):
        fac=np.sqrt(S[i]) 
-       mps_block[site-1].m[:,:,i] = mps_block[site-1].m[:,:,i]*fac
+       mps_block.data[site-1].m[:,:,i] = mps_block.data[site-1].m[:,:,i]*fac
        intermediate_mps.m[:,i,:] = fac*intermediate_mps.m[:,i,:]
+
+   return intermediate_mps
 
 
 
@@ -336,17 +202,21 @@ def copy_back_svd_results(mps_block, mpo_block, site, U, S, VH, sigma_dim):
 #  
 #   
 ############################################################################
-def arnoldi_multiply_each_site(mps_block, mpo_block, site, which_mode, precision, delta_chi, eval_loop_start, eval_loop_end):
-
-   global intermediate_mps
-   global mpoX, mpsX
+def arnoldi_multiply_each_site(mps_block, mpo_block, intermediate_mps, site, which_mode, precision, delta_chi, eval_loop_start, eval_loop_end):
 
    #find dims of the tensor objects we're dealing with
-   Wdim_A, SNdim_A, SNdim_B, opdim_A, sdim_A, opdim_B, sdim_B = get_dims_of_mpo_mps(intermediate_mps, mps_block[site], mpo_block[site])
-   mpoX=mpo_block[site]; mpsX=mps_block[site]
+   Wdim_A, SNdim_A, SNdim_B, opdim_A, sdim_A, opdim_B, sdim_B = get_dims_of_mpo_mps(intermediate_mps, mps_block.data[site], mpo_block.data[site])
+
+   #Construct a tuple arnoldi_multiply_each_site.lin_op_objects to be passed to LinearOperator routines
+   arnoldi_multiply_each_site.lin_op_objects = (intermediate_mps, mps_block.data[site], mpo_block.data[site])
 
    #Def theta = linear operator that acts on an input vector
    theta = LinearOperator(matvec=arnoldi_app_op_to_vec, rmatvec=arnoldi_app_HC_op_to_vec, matmat=arnoldi_mult_mat_by_mat, shape=(SNdim_A*Wdim_A, SNdim_B*sdim_B*opdim_B))
+
+   #There doesn't seem to be a direct way to pass {intermediate_mps, mps_block.data[site], mpo_block.data[site], etc} to matvec, rmatvec, matmat
+   #as a function argument in LinearOperator - see the following lines: 
+   #theta = LinearOperator(matvec=arnoldi_app_op_to_vec, rmatvec=arnoldi_app_HC_op_to_vec, matmat=arnoldi_mult_mat_by_mat, shape=(SNdim_A*Wdim_A, SNdim_B*sdim_B*opdim_B))
+   #U, S, VH = perform_arnoldi_svd(theta, which_mode, precision, delta_chi, eval_loop_start, current_chi, VH_rdim, nev_max)
 
    #max number of singular vals
    nev_max = min(SNdim_A*Wdim_A, SNdim_B*sdim_B*opdim_B)
@@ -357,16 +227,18 @@ def arnoldi_multiply_each_site(mps_block, mpo_block, site, which_mode, precision
 
    ##### PERFORM ARNOLDI SVD ##########
    print('starting ARNOLDI SVD at site = ', site)
-   U, S, VH, sigma_dim = perform_arnoldi_svd(theta, which_mode, precision, delta_chi, eval_loop_start, current_chi, VH_rdim, nev_max)
+   U, S, VH = perform_arnoldi_svd(theta, which_mode, precision, delta_chi, eval_loop_start, current_chi, VH_rdim, nev_max)
 
-   if (S[0] == 'switch-to-lapack') and (len(S) == 1):
+   if (U == None) and (VH == None):
      ##### SWITCH TO LAPACK SVD
      #Continue starting with the same [eval_loop_start = sigma_dim] that Arnoldi has got to ##########
-     eval_loop_start = sigma_dim
-     lapack_multiply_each_site(mps_block, mpo_block, site, which_mode, precision, eval_loop_start, eval_loop_end)
+     eval_loop_start = len(S)
+     intermediate_mps = lapack_multiply_each_site(mps_block, mpo_block, intermediate_mps, site, which_mode, precision, eval_loop_start, eval_loop_end)
    else:
      #Copy back SVD results to mps_block
-     copy_back_svd_results(mps_block, mpo_block, site, U, S, VH, sigma_dim)
+     intermediate_mps = copy_back_svd_results(mps_block, mpo_block, intermediate_mps, site, U, S, VH)
+
+   return intermediate_mps
 
 
 
@@ -381,7 +253,7 @@ def arnoldi_multiply_each_site(mps_block, mpo_block, site, which_mode, precision
 def perform_arnoldi_svd(theta, which_mode, precision, delta_chi, sigma_dim, current_chi, VH_rdim, nev_max):
 
    #if the fraction of singular vals > critical fraction -- use lapack, else -- use arnoldi
-   threshold_frac = 0.5
+   threshold_frac = 0.1
    #count the number of iterations in the while loop when sigma_dim was increased 
    #(so that we know if we should try decreasing sigma_dim or not)
    num_iters = 1
@@ -409,13 +281,12 @@ def perform_arnoldi_svd(theta, which_mode, precision, delta_chi, sigma_dim, curr
       if (eval_frac > threshold_frac):
 
          #If we exceed the threshold fraction of singular vals - switch to lapack instead 
-         print('ARNOLDI - eval_frac exceeded the threshold at sigma_dim', sigma_dim ,'switching to LAPACK: ')
+         print('ARNOLDI - eval_frac exceeded threshold at sigma_dim', sigma_dim ,'switching to LAPACK: ')
          print(' ')
-         #Return U,S,VH = 'switch-to-lapack' as a signal that we should switch to lapack; 
-         #IMPORTANT: return sigma_dim as is, since it will be needed in lapack svd;
-         U = []; U.append('switch-to-lapack'); S = []; S.append('switch-to-lapack'); VH = []; VH.append('switch-to-lapack')             
-         return U, S, VH, sigma_dim
-         break
+         #Return U,VH = None as a signal that we should switch to lapack; 
+         #IMPORTANT: return S = array of length = sigma_dim since we'll use the last sigma_dim in Arnoldi as a starting pt in lapack svd;
+         U = None; VH = None; S = np.zeros(sigma_dim)
+         return U, S, VH
 
       else:
 
@@ -427,8 +298,7 @@ def perform_arnoldi_svd(theta, which_mode, precision, delta_chi, sigma_dim, curr
              print('ARNOLDI completed, number of singular vals: ', sigma_dim)
              print(' ')
              #exit the loop & return svd matrices
-             return U, S, VH, sigma_dim
-             break
+             return U, S, VH
                      
          elif (which_mode == 'accuracy'):
 
@@ -462,9 +332,7 @@ def perform_arnoldi_svd(theta, which_mode, precision, delta_chi, sigma_dim, curr
                   print(' ')
                   #exit the loop & return svd matrices
                   #Note: we only return U, S, VH, sigma_dim if the required accuracy has already been achieved
-                  return U, S, VH, sigma_dim
-                  break
-
+                  return U, S, VH
 
 
 
@@ -493,12 +361,16 @@ def perform_arnoldi_svd(theta, which_mode, precision, delta_chi, sigma_dim, curr
 ############################################################################
 def arnoldi_app_op_to_vec(Vi):
 
-   global Block_Ltemp, Block_Rtemp 
-   global Block_Lvec, Block_Rvec
+   #Extract mps/mpo objects needed for this routine
+   intermediate_mps = arnoldi_multiply_each_site.lin_op_objects[0]
+   mpsX = arnoldi_multiply_each_site.lin_op_objects[1]
+   mpoX = arnoldi_multiply_each_site.lin_op_objects[2]
 
    #find dims of the tensor objects we're dealing with
    Wdim_A, SNdim_A, SNdim_B, opdim_A, sdim_A, opdim_B, sdim_B = get_dims_of_mpo_mps(intermediate_mps, mpsX, mpoX)
 
+   #NB: In Python, it's completely unnecessary to define Block_Rtemp, etc vars outside app_op_to_vec func
+   #In Fortran it was necessary mainly cause we keep them as global module-wide vars
    Block_Ltemp = np.zeros((SNdim_A,Wdim_A), dtype=complex)
    Block_Rtemp = np.zeros((SNdim_B,sdim_B*opdim_B), dtype=complex)
    Block_Lvec = np.zeros((SNdim_A*Wdim_A), dtype=complex) 
@@ -545,8 +417,10 @@ def arnoldi_app_op_to_vec(Vi):
 ############################################################################
 def arnoldi_app_HC_op_to_vec(Vi):
 
-   global Block_Ltemp, Block_Rtemp 
-   global Block_Lvec, Block_Rvec, Block_vc
+   #Extract mps/mpo objects needed for this routine
+   intermediate_mps = arnoldi_multiply_each_site.lin_op_objects[0]
+   mpsX = arnoldi_multiply_each_site.lin_op_objects[1]
+   mpoX = arnoldi_multiply_each_site.lin_op_objects[2]
 
    #find dims of the tensor objects we're dealing with
    Wdim_A, SNdim_A, SNdim_B, opdim_A, sdim_A, opdim_B, sdim_B = get_dims_of_mpo_mps(intermediate_mps, mpsX, mpoX)
@@ -596,8 +470,10 @@ def arnoldi_app_HC_op_to_vec(Vi):
 ############################################################################
 def arnoldi_mult_mat_by_mat(Vi):
 
-   global Block_Ltemp, Block_Rtemp 
-   global Block_Lvec, Block_Rvec
+   #Extract mps/mpo objects needed for this routine
+   intermediate_mps = arnoldi_multiply_each_site.lin_op_objects[0]
+   mpsX = arnoldi_multiply_each_site.lin_op_objects[1]
+   mpoX = arnoldi_multiply_each_site.lin_op_objects[2]
 
    #find dims of the tensor objects we're dealing with
    Wdim_A, SNdim_A, SNdim_B, opdim_A, sdim_A, opdim_B, sdim_B = get_dims_of_mpo_mps(intermediate_mps, mpsX, mpoX)
@@ -638,14 +514,14 @@ def arnoldi_mult_mat_by_mat(Vi):
 def sweep_over_free_mpo_sites(mps_block, mpo_block, site, which_mode, precision, eval_loop_start, eval_loop_end):
 
      #Verify that mpo_block input has an mps-like tail 
-     if (mpo_block[site].Ndim != 1):
+     if (mpo_block.data[site].Ndim != 1):
         print('Error at site = ', site)
         sys.exit("ERROR in sweep_over_free_mpo_sites: mpo_block has been set up incorrectly - should have North dim = 1. Exiting...")
 
      #find dims of the tensor objects we're dealing with
-     SNdim_A = mpo_block[site-1].Sdim; SNdim_B = mpo_block[site].Sdim
-     opdim_A = mpo_block[site].Wdim; opdim_B = mpo_block[site].Edim
-     Wdim_A = mps_block[site-1].Wdim
+     SNdim_A = mpo_block.data[site-1].Sdim; SNdim_B = mpo_block.data[site].Sdim
+     opdim_A = mpo_block.data[site].Wdim; opdim_B = mpo_block.data[site].Edim
+     Wdim_A = mps_block.data[site-1].Wdim
 
      #construct theta matrix for svd
      theta=np.zeros((Wdim_A*SNdim_A, opdim_B*SNdim_B), dtype=complex)
@@ -653,7 +529,7 @@ def sweep_over_free_mpo_sites(mps_block, mpo_block, site, which_mode, precision,
 
      for iA in np.arange(SNdim_A):
        for iB in np.arange(SNdim_B): 
-         temp_prod = np.dot(mps_block[site-1].m[iA,:,:], mpo_block[site].m[iB,0,:,:])
+         temp_prod = np.dot(mps_block.data[site-1].m[iA,:,:], mpo_block.data[site].m[iB,0,:,:])
          theta[iA*Wdim_A : (iA+1)*Wdim_A , iB*opdim_B : (iB+1)*opdim_B] = temp_prod[0:Wdim_A , 0:opdim_B]
 
      #tot number of singular vals
@@ -663,25 +539,28 @@ def sweep_over_free_mpo_sites(mps_block, mpo_block, site, which_mode, precision,
 
      ##### PERFORM LAPACK SVD ##########
      print('starting LAPACK SVD at site = ', site)
-     U, S, VH, sigma_dim = perform_lapack_svd(theta, which_mode, precision, eval_loop_start, eval_loop_end, current_chi, nev_max)
+     U, S, VH = perform_lapack_svd(theta, which_mode, precision, eval_loop_start, eval_loop_end, current_chi, nev_max)
+
+     #Work out sigma_dim
+     sigma_dim = len(S)
 
      #copy U to mps_block[site-1]
-     mps_block[site-1] = mps_site(SNdim_A, Wdim_A, sigma_dim)
+     mps_block.data[site-1].update_site(SNdim_A, Wdim_A, sigma_dim)
      for i in np.arange(SNdim_A):
-         mps_block[site-1].m[i,:,0:sigma_dim] = U[i*Wdim_A : (i+1)*Wdim_A , 0:sigma_dim] 
+         mps_block.data[site-1].m[i,:,0:sigma_dim] = U[i*Wdim_A : (i+1)*Wdim_A , 0:sigma_dim] 
 
      #Append extra site to mps_block
-     mps_block.append(mps_site(SNdim_B, sigma_dim, opdim_B))
+     mps_block.data.append(defs.mps_site(SNdim_B, sigma_dim, opdim_B))
      mps_block.N_sites = mps_block.N_sites + 1
      for i in np.arange(SNdim_B):
-         mps_block[site].m[i, 0:sigma_dim, :] = VH[0:sigma_dim , i*opdim_B : (i+1)*opdim_B]
+         mps_block.data[site].m[i, 0:sigma_dim, :] = VH[0:sigma_dim , i*opdim_B : (i+1)*opdim_B]
 
      
      #absorb S to mps_block[site-1] and the new intermediate_mps at site=site
      for i in np.arange(sigma_dim):
          fac=np.sqrt(S[i]) 
-         mps_block[site-1].m[:,:,i] = mps_block[site-1].m[:,:,i]*fac
-         mps_block[site].m[:,i,:] = fac*mps_block[site].m[:,i,:]
+         mps_block.data[site-1].m[:,:,i] = mps_block.data[site-1].m[:,:,i]*fac
+         mps_block.data[site].m[:,i,:] = fac*mps_block.data[site].m[:,i,:]
 
 
 
@@ -717,15 +596,15 @@ def contract_two_mps(mps_block1, mps_block2):
    # via 3-step process ZIP-ABSORB-UPDATE
    for site in np.arange(mps_block1.N_sites):
         #Get east & west dims of each site
-        Wdim1 = cp.copy(mps_block1[site].Wdim); Wdim2 = cp.copy(mps_block2[site].Wdim)
-        Edim1 = cp.copy(mps_block1[site].Edim); Edim2 = cp.copy(mps_block2[site].Edim)
+        Wdim1 = cp.copy(mps_block1.data[site].Wdim); Wdim2 = cp.copy(mps_block2.data[site].Wdim)
+        Edim1 = cp.copy(mps_block1.data[site].Edim); Edim2 = cp.copy(mps_block2.data[site].Edim)
         if site==0:
            mps_overlap = np.zeros((Edim1*Edim2), dtype=complex)
            
            #At site=0, initialize mps_overlap by multiplying the first pair of sites (here Wdim=1)
            for e1 in np.arange(Edim1):
              for e2 in np.arange(Edim2):
-                mps_overlap[e2 + e1*Edim2] = np.dot(mps_block1[site].m[:,0,e1], mps_block2[site].m[:,0,e2])
+                mps_overlap[e2 + e1*Edim2] = np.dot(mps_block1.data[site].m[:,0,e1], mps_block2.data[site].m[:,0,e2])
         else:
            single_site_overlap = np.zeros((Wdim1*Wdim2, Edim1*Edim2), dtype=complex)
            #Zip the chain at site=site to form a zipped-up segment = single_site overlap
@@ -733,7 +612,7 @@ def contract_two_mps(mps_block1, mps_block2):
              for e2 in np.arange(Edim2):
                for w1 in np.arange(Wdim1):
                  for w2 in np.arange(Wdim2):
-                     single_site_overlap[w2 + w1*Wdim2, e2 + e1*Edim2] = np.dot(mps_block1[site].m[:,w1,e1], mps_block2[site].m[:,w2,e2])
+                     single_site_overlap[w2 + w1*Wdim2, e2 + e1*Edim2] = np.dot(mps_block1.data[site].m[:,w1,e1], mps_block2.data[site].m[:,w2,e2])
             #At site=N_sites-1 the chain terminates and 
             #single_site_overlap has only one leg (cause Edim=1)
             #Thus reshape single_site_overlap as a vector

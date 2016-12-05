@@ -2,16 +2,17 @@ import math
 import sys
 import copy as cp
 import numpy as np
+from block_multiplication import lapack_multiply_each_site, arnoldi_multiply_each_site, sweep_over_free_mpo_sites
 
 # Declare the size parameters for MPS/MPO
 # We'll set the actual values in the main program
 
 #Local Hilbert/Liouville space dimension of a given MPS/MPO site
-local_dim=None
+#local_dim=None
 #Bond dim of initial MPS 
-bond_dim=None
+#bond_dim=None
 #Bond dim of MPO
-opdim=None
+#opdim=None
 
 ##########################################################################
 #   Class mps_site    
@@ -35,17 +36,40 @@ class mps_site:
                self.Edim = east_dim
                #initialize tensor on each mps site (all zeros - just an example):
                self.m = np.zeros((self.SNdim, self.Wdim, self.Edim), dtype=complex)
-           elif np.shape(np.shape(input_tensor)) != 3:
+           elif len(input_tensor.shape) != 3:
                sys.exit("ERROR in mps_site - input_tensor must be a 3D object. Exiting...")
            elif (south_north_dim != None) or (west_dim != None) or (east_dim != None):
                sys.exit("ERROR in mps_site - if input_tensor is provided, it must be the only input of mps_site. Exiting...")
            else:
                #define dimensions 
-               self.SNdim = np.shape(input_tensor,1)
-               self.Wdim = np.shape(input_tensor,2)
-               self.Edim = np.shape(input_tensor,3)
+               self.SNdim = input_tensor.shape[0]
+               self.Wdim = input_tensor.shape[1]
+               self.Edim = input_tensor.shape[2]
                #initialize tensor on each mps site = some input_tensor
                self.m = input_tensor
+
+      def update_site(self, south_north_dim = None, west_dim = None, east_dim = None, input_tensor = None):
+
+           if (input_tensor == None):
+               #define dimensions 
+               self.SNdim = south_north_dim
+               self.Wdim = west_dim
+               self.Edim = east_dim
+               #initialize tensor on each mps site (all zeros - just an example):
+               self.m = np.zeros((self.SNdim, self.Wdim, self.Edim), dtype=complex)
+           elif len(input_tensor.shape) != 3:
+               sys.exit("ERROR in mps_site - input_tensor must be a 3D object. Exiting...")
+           elif (south_north_dim != None) or (west_dim != None) or (east_dim != None):
+               sys.exit("ERROR in mps_site - if input_tensor is provided, it must be the only input of mps_site. Exiting...")
+           else:
+               #define dimensions 
+               self.SNdim = input_tensor.shape[0]
+               self.Wdim = input_tensor.shape[1]
+               self.Edim = input_tensor.shape[2]
+               #initialize tensor on each mps site = some input_tensor
+               self.m = input_tensor
+
+  
             
 
 
@@ -74,16 +98,16 @@ class mpo_site:
             self.Edim = east_dim
             #initialize tensor on each mps site (all zeros - just an example):
             self.m = np.zeros((self.Sdim, self.Ndim, self.Wdim, self.Edim), dtype=complex)
-         elif np.shape(np.shape(input_tensor)) != 4:
+         elif len(input_tensor.shape) != 4:
             sys.exit("ERROR in mpo_site - input_tensor must be a 4D object. Exiting...")
          elif (south_dim != None) or (north_dim != None) or (west_dim != None) or (east_dim != None):
             sys.exit("ERROR in mpo_site - if input_tensor is provided, it must be the only input of mpo_site. Exiting...")
          else:
             #define dimensions 
-            self.Sdim = np.shape(input_tensor,1)
-            self.Ndim = np.shape(input_tensor,2)
-            self.Wdim = np.shape(input_tensor,3)
-            self.Edim = np.shape(input_tensor,4)
+            self.Sdim = input_tensor.shape[0]
+            self.Ndim = input_tensor.shape[1]
+            self.Wdim = input_tensor.shape[2]
+            self.Edim = input_tensor.shape[3]
             #initialize tensor on each mpo site = some input_tensor
             self.m = input_tensor
 
@@ -100,33 +124,36 @@ class mpo_site:
 #   Set Wdim,Edim = operator bond dim to the west & to the east of a site 
 #   Note that operator bond dim = 1 at the ends of the MPO chain
 ########################################################################### 
-class mpo_block(mpo_site, list):
+class mpo_block:
 
       #the procedure w/ local_dim, op_dim should be an instance instead! (or not?)
-      def __init__(self, opdim, N_sites, length_of_mps_block = None):
+      def __init__(self, local_dim, opdim, N_sites, length_of_mps_block = None):
          
           #Record the length of mpo_block
           self.N_sites = N_sites
+
+          #initialize list of mpo_sites
+          self.data = []
 
           #Note that Python numbers its lists from 0 to N-1!!!
           for site in np.arange(N_sites):
 
               if (length_of_mps_block == None) or (length_of_mps_block == N_sites):
                  if site == 0:
-                    self.append(mpo_site(local_dim, local_dim, 1, opdim))
+                    self.data.append(mpo_site(local_dim, local_dim, 1, opdim))
                  elif site == N_sites-1:
-                    self.append(mpo_site(local_dim, local_dim, opdim, 1))
+                    self.data.append(mpo_site(local_dim, local_dim, opdim, 1))
                  else:
-                    self.append(mpo_site(local_dim, local_dim, opdim, opdim))
+                    self.data.append(mpo_site(local_dim, local_dim, opdim, opdim))
               else: 
                  if site == 0:
-                    self.append(mpo_site(local_dim, local_dim, 1, opdim))
+                    self.data.append(mpo_site(local_dim, local_dim, 1, opdim))
                  elif (site > length_of_mps_block-1) and (site < N_sites-1):
-                    self.append(mpo_site(local_dim, 1, opdim, opdim))
+                    self.data.append(mpo_site(local_dim, 1, opdim, opdim))
                  elif site == N_sites-1:
-                    self.append(mpo_site(local_dim, 1, opdim, 1))
+                    self.data.append(mpo_site(local_dim, 1, opdim, 1))
                  else:
-                    self.append(mpo_site(local_dim, local_dim, opdim, opdim))
+                    self.data.append(mpo_site(local_dim, local_dim, opdim, opdim))
 
 
 
@@ -158,12 +185,15 @@ class mpo_block(mpo_site, list):
 #   In the cases where this is not true, we'll need to make a slight 
 #   modification to this part of the code. 
 ########################################################################### 
-class mps_block(mps_site, list):
+class mps_block(mpo_block):
 
-      def __init__(self, bond_dim, N_sites):
+      def __init__(self, local_dim, bond_dim, N_sites):
 
           #Record the length of mps_block
           self.N_sites = N_sites
+
+          #initialize list of mpo_sites
+          self.data = []
 
           #Note that Python numbers its lists from 0 to N-1!!!
           for site in np.arange(N_sites):
@@ -187,7 +217,7 @@ class mps_block(mps_site, list):
                      east_dim=bond_dim
      
               #Create a new mps_site
-              self.append(mps_site(local_dim, west_dim, east_dim))
+              self.data.append(mps_site(local_dim, west_dim, east_dim))
 
 
       def copy_mps_block(self, mps_copy, N_sites, copy_conjugate=False): 
@@ -195,25 +225,150 @@ class mps_block(mps_site, list):
           if copy_conjugate==False: 
              for site in np.arange(N_sites):
                 #copy the old mps_site data to the new mps_site
-                SNdim = mps_copy[site].SNdim; Wdim = mps_copy[site].Wdim; Edim = mps_copy[site].Edim
-                mps_copy[site].m = cp.deepcopy(self[site].m[0:SNdim, 0:Wdim, 0:Edim])
+                #SNdim = mps_copy.data[site].SNdim; Wdim = mps_copy.data[site].Wdim; Edim = mps_copy.data[site].Edim
+                #mps_copy.data[site].m = cp.deepcopy(self.data[site].m[0:SNdim, 0:Wdim, 0:Edim])
+                mps_copy.data[site].update_site(input_tensor = self.data[site].m)
           if copy_conjugate==True: 
              for site in np.arange(N_sites):
                 #copy the old mps_site data to the new mps_site
-                SNdim = mps_copy[site].SNdim; Wdim = mps_copy[site].Wdim; Edim = mps_copy[site].Edim
-                mps_copy[site].m = cp.deepcopy(np.conj(self[site].m[0:SNdim, 0:Wdim, 0:Edim]))
+                #SNdim = mps_copy.data[site].SNdim; Wdim = mps_copy.data[site].Wdim; Edim = mps_copy.data[site].Edim
+                #mps_copy.data[site].update_site(input_tensor = np.conj(self.data[site].m[0:SNdim, 0:Wdim, 0:Edim]))
+                mps_copy.data[site].update_site(input_tensor = np.conj(self.data[site].m))
 
 
       def expand_mps_block(self, mps_expanded, N_sites): 
           #Note that Python numbers its lists from 0 to N-1!!!
           for site in np.arange(N_sites):
              #copy the old mps_site data to the new mps_site
-             SNdim = self[site].SNdim; Wdim = self[site].Wdim; Edim = self[site].Edim
-             mps_expanded[site].m[0:SNdim, 0:Wdim, 0:Edim] = cp.deepcopy(self[site].m)
+             SNdim = self.data[site].SNdim; Wdim = self.data[site].Wdim; Edim = self.data[site].Edim
+             mps_expanded.data[site].m[0:SNdim, 0:Wdim, 0:Edim] = cp.deepcopy(self.data[site].m)
+
+      def append_mps_site(self, tensor_to_append):
+    
+          #Append function only supports mps_site with Wdim = Edim = 1
+          if (tensor_to_append.shape[1] != 1) or (tensor_to_append.shape[2] != 1):
+            sys.exit("ERROR in append_mps_site - input_tensor must have Wdim = 1, Edim = 1. Exiting...")
+          #Append a new site
+          self.data.append(mps_site(input_tensor = tensor_to_append))
+          self.N_sites = self.N_sites + 1 
+          print('New site appended to mps_block - increasing the length from', self.N_sites - 1, 'to', self.N_sites)
 
 
+      ##############################################################################################################################################
+      #
+      #  multiply_block
+      #
+      #  Variables:
+      #  mps_block1, mpo_block1 = input generic MPS/MPO blocks
+      #  N_sites = length of MPS/MPO blocks
+      #
+      #  Synopsis:
+      #  Sweep over all sites, multiplying MPS & MPO blocks site-by-site. 
+      #  Near the ends of chain (smaller tensors) - use lapack SVD
+      #  Deeper within the chain (larger tensors) - use arnoldi SVD 
+      #
+      #  As a final output, the original mps_block=MPS is changed to a
+      #  new mps_block=MPS*MPO
+      #
+      #  Different modes in multiply_block: 'accuracy', 'chi', 'fraction'
+      #
+      #  Precision = required_accuracy in 'accuracy' mode
+      #            = fraction of singular vals to calculate in 'fraction' mode 
+      #            = bond_dim in 'chi' mode
+      #
+      #  eval_loop_start/end input only matters if which_mode='accuracy'
+      #  otherwise, they're just set automatically.
+      #
+      #  Note that the actual eval_frac might be slightly different from the input (requested) eval_frac (e.g. 0.5555 or 0.6666 instead of 0.51)
+      #  This is because eval_frac*nev_max is rounded to the nearest integer (sigma_dim = number of singular vals must be integer after all)
+      #
+      #  In mode = 'chi' we can set precision = None ---> the code will then use default values for each bond: chi = sdim_A, chi = opdim_A, etc
+      #
+      ##############################################################################################################################################
+      def multiply_block(self, mpo_block, which_mode='accuracy', precision=0.3, delta_chi=1, eval_loop_start=None, eval_loop_end=None):
+   
+          #The code currently works in cases where MPS_length <= MPO_length
+          if (self.N_sites > mpo_block.N_sites):
+              sys.exit("ERROR in multiply_block: mpo_block should be equal to or longer than mps_block. Exiting...")
+
+          #Sanity check of the input
+          if (which_mode != 'accuracy') and (which_mode != 'chi') and (which_mode != 'fraction'):
+              sys.exit("ERROR in multiply_block: which_mode must be 'accuracy', 'chi', or 'fraction'. Exiting...")
+
+          #Sanity check of the input
+          if (which_mode == "accuracy") or (which_mode == "fraction"):  
+              #Note that both [fraction of evals] and [accuracy = ratio of smallest & largest sigma] must be between 0 and 1
+              if (precision < 0) or (precision > 1) or (precision == None):
+                 sys.exit("ERROR in multiply_block: precision must be between 0 and 1. Exiting...")
+          elif (which_mode == "chi"):
+             if not (precision == None):
+                if not isinstance(precision,int) or not (precision > 0): 
+                  sys.exit("ERROR in multiply_block: precision must be a positive integer or equal to None. Exiting...")
+                
+          #Sanity check of the input
+          if which_mode == "accuracy":
+
+             if not (eval_loop_start == None):
+                if not isinstance(eval_loop_start,int) or not (eval_loop_start > 0):
+                   sys.exit("ERROR in multiply_block: eval_loop_start must be a positive integer or equal to None. Exiting...")
+
+             if not (eval_loop_end == None): 
+                if not isinstance(eval_loop_end,int) or not (eval_loop_end > 0):
+                   sys.exit("ERROR in multiply_block: eval_loop_end must be a positive integer or equal to None. Exiting...")
 
 
+          #Check that ends of mps/mpo have bond_dim = 1
+          if (self.data[0].Wdim != 1):
+              sys.exit("ERROR in multiply_block: first site of MPS must have West dim = 1. Exiting...")
+          if (mpo_block.data[0].Wdim != 1):
+              sys.exit("ERROR in multiply_block: first site of MPO must have West dim = 1. Exiting...")
+          if (self.data[self.N_sites - 1].Edim != 1):
+              sys.exit("ERROR in multiply_block: last site of MPS must have East dim = 1. Exiting...")
+          if (mpo_block.data[mpo_block.N_sites - 1].Edim != 1):
+              sys.exit("ERROR in multiply_block: last site of MPO must have East dim = 1. Exiting...")
+
+       
+          #Note that Python numbers its lists from 0 to N-1!!!
+          for site in np.arange(mpo_block.N_sites):
+
+              #Verify that MPS/MPO have correct South & North dims 
+              if (site < self.N_sites):
+                 if (mpo_block.data[site].Ndim == 1):
+                     print('Error at site = ', site)
+                     sys.exit("ERROR in multiply_block: mpo_block has been set up incorrectly - should have North dim > 1. Exiting...")
+                 if (mpo_block.data[site].Sdim == 1):
+                     print('Error at site = ', site)
+                     sys.exit("ERROR in multiply_block: mpo_block has been set up incorrectly - should have South dim > 1. Exiting...")
+                 if (self.data[site].SNdim == 1):
+                     print('Error at site = ', site)
+                     sys.exit("ERROR in multiply_block: mpo_block has been set up incorrectly - should have South-North dim > 1. Exiting...")
+
+              ############## PERFORM BLOCK MULTIPLICATION AND SVD #######################################################
+    
+              if (site == 0):
+                  #Simple mult at site=0, no SVD
+                  intermediate_mps = mps_site(self.data[site].SNdim, self.data[site].Wdim, self.data[site].Edim*mpo_block.data[site].Edim)
+                  intermediate_mps = lapack_multiply_each_site(self, mpo_block, intermediate_mps, site, which_mode, precision, eval_loop_start, eval_loop_end)
+              else:
+                  if (site == 1) or (site == self.N_sites - 1):
+                      #use lapack at site=1,N_sites-1
+                      intermediate_mps = lapack_multiply_each_site(self, mpo_block, intermediate_mps, site, which_mode, precision, eval_loop_start, eval_loop_end)
+                  elif (site > self.N_sites - 1):
+                      #add the free mpo sites to mps
+                      sweep_over_free_mpo_sites(self, mpo_block, site, which_mode, precision, eval_loop_start, eval_loop_end)
+                  else:
+                      #on other sites, use arnoldi by default, but switch to lapack if eval_frac is too large (see arnoldi_multiply_each_site function)
+                      intermediate_mps = arnoldi_multiply_each_site(self, mpo_block, intermediate_mps, site, which_mode, precision, delta_chi, eval_loop_start, eval_loop_end)
+
+              ######################################################################################################
+
+          #Check that ends of output MPS have bond_dim = 1
+          if (self.data[0].Wdim != 1):
+              sys.exit("OUTPUT ERROR in multiply_block: first site of OUTPUT MPS must have West dim = 1. Exiting...")
+          if (self.data[self.N_sites - 1].Edim != 1):
+              sys.exit("OUTPUT ERROR in multiply_block: last site of OUTPUT MPS must have East dim = 1. Exiting...")
+
+          #return mps_block1
 
 
 

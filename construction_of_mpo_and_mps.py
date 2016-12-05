@@ -2,18 +2,14 @@ import math
 import numpy as np
 import sys
 import copy as cp
-import definitions as defs
+import definitions
 import pauli_matrices as Sigma
 import spin_1_matrices as Spin
 import block_multiplication as mult
 
 
 #Construct the AKLT Hamiltonian
-def construct_aklt_hamiltonian(mpo_hamiltonian, N_sites):
-
-  #initialize hamiltonian sites so we can make them diagonal
-  #for site in np.arange(1,N_sites-1):
-      #mpo_hamiltonian[site].m = np.zeros((defs.local_dim, defs.local_dim, defs.opdim, defs.opdim), dtype=complex)
+def construct_aklt_hamiltonian(mpo_hamiltonian, local_dim, opdim, N_sites):
 
   #pre-calculate spin terms:
   Sz_Sz = np.dot(Spin.z, Spin.z); Sup_Sup = np.dot(Spin.up, Spin.up); Sdn_Sdn = np.dot(Spin.dn, Spin.dn)
@@ -60,9 +56,9 @@ def construct_aklt_hamiltonian(mpo_hamiltonian, N_sites):
 #Each step of the loop is adding an extra term to the sum
 #O1 x O2 x I x I x I + I x O1 x O2 x I x I + I x I x O1 x O2 x I + ...
 #Of two-site terms
-def construct_afm_heisenberg_hamiltonian(mpo_hamiltonian, N_sites):
+def construct_afm_heisenberg_hamiltonian(mpo_hamiltonian, local_dim, opdim, N_sites):
 
-  mpo_hamiltonian[1].m = np.zeros((defs.local_dim, defs.local_dim, defs.opdim, defs.opdim), dtype=complex)
+  mpo_hamiltonian.data[1].m = np.zeros((local_dim, local_dim, opdim, opdim), dtype=complex)
 
   term_cnt = -1
 
@@ -82,22 +78,22 @@ def mpo_add_extra_term(mpo_hamiltonian, pre_fac, op1, op2, op_site, N_sites, is_
    #Prepare op_list = {I,I,O1,O2,I} for a given term I x I x O1 x O2 x I
    op_list = prepare_operator_list(op1, op2, op_site, N_sites, is_two_site_term, which_spin)
 
-   ensure_space_exists(mpo_hamiltonian[0], term_cnt)
+   ensure_space_exists(mpo_hamiltonian.data[0], term_cnt)
 
    o = term_cnt+1
    op_list[0] = pre_fac*op_list[0]
-   mpo_hamiltonian[0].m[:,:,0,o] = cp.deepcopy(op_list[0])
+   mpo_hamiltonian.data[0].m[:,:,0,o] = cp.deepcopy(op_list[0])
   
-   for site in np.arange(1,N_sites-1): #FIXME change back
-      mpo_hamiltonian[site].m[:,:,o,o] = cp.deepcopy(op_list[site])
+   for site in np.arange(1,N_sites-1): #FIXME change back (N-1 ---> if N_mpo = N_mps, N_mpo = N_mps + 1; N-2 ---> if N_mpo >= N_mps + 2;)
+      mpo_hamiltonian.data[site].m[:,:,o,o] = cp.deepcopy(op_list[site])
 
-   mpo_hamiltonian[N_sites-1].m[:,:,o,0] = cp.deepcopy(op_list[N_sites-1])
+   mpo_hamiltonian.data[N_sites-1].m[:,:,o,0] = cp.deepcopy(op_list[N_sites-1])
 
    #temp_op = op_list[N_sites-2]
-   #mpo_hamiltonian[N_sites-2].m[:,0,o,o] = cp.deepcopy(temp_op[:,0]) #FIXME change back
+   #mpo_hamiltonian.data[N_sites-2].m[:,0,o,o] = cp.deepcopy(temp_op[:,0]) #FIXME change back
 
    #temp_op = op_list[N_sites-1]
-   #mpo_hamiltonian[N_sites-1].m[:,0,o,0] = cp.deepcopy(temp_op[:,0]) #FIXME change back
+   #mpo_hamiltonian.data[N_sites-1].m[:,0,o,0] = cp.deepcopy(temp_op[:,0]) #FIXME change back
 
    term_cnt = o
 
@@ -137,21 +133,22 @@ def construct_afm_heisenberg_ground_state_wavef_3site(psi_ket, psi_bra, N_sites)
  
    #Construct psi_ket MPS 
    #using the exact matrices derived analytically:
-   psi_ket[0].m[0,0,0:2] = np.array([1.0, 0.0]) 
-   psi_ket[0].m[1,0,0:2] = np.array([0.0, 1.0]) 
+   psi_ket.data[0].m[0,0,0:2] = np.array([1.0, 0.0]) 
+   psi_ket.data[0].m[1,0,0:2] = np.array([0.0, 1.0]) 
 
-   psi_ket[1].m[0,0:2,0:2] = np.array([[0.0, 1.0], [1.0, 0.0]]) 
-   psi_ket[1].m[1,0:2,0:2] = np.array([[-2.0, 0.0], [0.0, 0.0]]) 
+   psi_ket.data[1].m[0,0:2,0:2] = np.array([[0.0, 1.0], [1.0, 0.0]]) 
+   psi_ket.data[1].m[1,0:2,0:2] = np.array([[-2.0, 0.0], [0.0, 0.0]]) 
 
-   psi_ket[2].m[0,0:2,0] = np.array([1.0, 0.0]) 
-   psi_ket[2].m[1,0:2,0] = np.array([0.0, 1.0]) 
+   psi_ket.data[2].m[0,0:2,0] = np.array([1.0, 0.0]) 
+   psi_ket.data[2].m[1,0:2,0] = np.array([0.0, 1.0]) 
 
    #Construct psi_bra from psi_ket & normalize them:
    normalize_mps_blocks(psi_ket, psi_bra, N_sites)
   
    #Verify the psi_coefficient tensor of the ground state wavefunction
    print('Proof reading the initial psi coefficient tensor: ')
-   verify_psi_coeff_tensor(psi_ket, 1/np.sqrt(6.0), N_sites) 
+   local_dim = 2
+   verify_psi_coeff_tensor(psi_ket, 1/np.sqrt(6.0), local_dim, N_sites) 
    #The quantum state psi coefficients should be: 
    #psi_tensor_ijk(:,:,:) = 0.0
    #psi_tensor_ijk(0,0,1) = 1.0 
@@ -163,25 +160,26 @@ def construct_aklt_ground_state_wavef(psi_ket, psi_bra, N_sites):
 
    #Construct psi_ket MPS 
    #using the exact matrices derived analytically:
-   psi_ket[0].m[0,0,0:2] = np.array([0.0, np.sqrt(2.0/3.0)])
-   psi_ket[0].m[1,0,0:2] = np.array([-np.sqrt(1.0/3.0), 0.0])
-   psi_ket[0].m[2,0,0:2] = np.array([0.0, 0.0])
+   psi_ket.data[0].m[0,0,0:2] = np.array([0.0, np.sqrt(2.0/3.0)])
+   psi_ket.data[0].m[1,0,0:2] = np.array([-np.sqrt(1.0/3.0), 0.0])
+   psi_ket.data[0].m[2,0,0:2] = np.array([0.0, 0.0])
 
    for site in np.arange(1,N_sites-1):
-      psi_ket[site].m[0,0:2,0:2] = np.array([[0.0, np.sqrt(2.0/3.0)], [0.0, 0.0]])
-      psi_ket[site].m[1,0:2,0:2] = np.array([[-np.sqrt(1.0/3.0), 0.0], [0.0, np.sqrt(1.0/3.0)]])
-      psi_ket[site].m[2,0:2,0:2] = np.array([[0.0, 0.0], [-np.sqrt(2.0/3.0), 0.0]])
+      psi_ket.data[site].m[0,0:2,0:2] = np.array([[0.0, np.sqrt(2.0/3.0)], [0.0, 0.0]])
+      psi_ket.data[site].m[1,0:2,0:2] = np.array([[-np.sqrt(1.0/3.0), 0.0], [0.0, np.sqrt(1.0/3.0)]])
+      psi_ket.data[site].m[2,0:2,0:2] = np.array([[0.0, 0.0], [-np.sqrt(2.0/3.0), 0.0]])
 
-   psi_ket[N_sites-1].m[0,0:2,0] = np.array([np.sqrt(2.0/3.0), 0.0])
-   psi_ket[N_sites-1].m[1,0:2,0] = np.array([0.0, np.sqrt(1.0/3.0)])
-   psi_ket[N_sites-1].m[2,0:2,0] = np.array([0.0, 0.0])
+   psi_ket.data[N_sites-1].m[0,0:2,0] = np.array([np.sqrt(2.0/3.0), 0.0])
+   psi_ket.data[N_sites-1].m[1,0:2,0] = np.array([0.0, np.sqrt(1.0/3.0)])
+   psi_ket.data[N_sites-1].m[2,0:2,0] = np.array([0.0, 0.0])
 
    #Construct psi_bra from psi_ket & normalize them:
    normalize_mps_blocks(psi_ket, psi_bra, N_sites)
    
    if (N_sites == 5) or (N_sites == 4) or (N_sites == 3):
        print('Proof reading the initial psi coefficient tensor: ')
-       verify_psi_coeff_tensor(psi_ket, 1.0, N_sites)
+       local_dim = 3
+       verify_psi_coeff_tensor(psi_ket, 1.0, local_dim, N_sites)
        
 
    
@@ -201,7 +199,7 @@ def normalize_mps_blocks(psi_ket, psi_bra, N_sites):
 
    #normalize psi_ket site-by-site
    for site in np.arange(N_sites):
-       psi_ket[site].m = psi_ket[site].m/np.absolute(c_norm**(0.5/N_sites))
+       psi_ket.data[site].m = psi_ket.data[site].m/np.absolute(c_norm**(0.5/N_sites))
    #Get normalized psi_bra from psi_ket
    psi_ket.copy_mps_block(psi_bra, N_sites, True)
     
@@ -211,36 +209,36 @@ def normalize_mps_blocks(psi_ket, psi_bra, N_sites):
 #Computing psi_tensor amounts to multiplying together all MPS sites
 #to produce a single tensor containing the coefficients of all quantum states:
 #|Psi> = sum_ijk Psi_ijk |ijk>
-def verify_psi_coeff_tensor(psi_mps_form, calibration_fac, N_sites):
+def verify_psi_coeff_tensor(psi_mps_form, calibration_fac, local_dim, N_sites):
 
   if N_sites == 3:
-     psi_tensor = np.zeros((defs.local_dim, defs.local_dim, defs.local_dim), dtype=complex)
-     for i in np.arange(defs.local_dim):
-       for j in np.arange(defs.local_dim):
-         for k in np.arange(defs.local_dim):
-            psi_tensor[i,j,k] = np.dot(psi_mps_form[0].m[i,0,:], np.dot(psi_mps_form[1].m[j,:,:], psi_mps_form[2].m[k,:,0]))/calibration_fac
+     psi_tensor = np.zeros((local_dim, local_dim, local_dim), dtype=complex)
+     for i in np.arange(local_dim):
+       for j in np.arange(local_dim):
+         for k in np.arange(local_dim):
+            psi_tensor[i,j,k] = np.dot(psi_mps_form.data[0].m[i,0,:], np.dot(psi_mps_form.data[1].m[j,:,:], psi_mps_form.data[2].m[k,:,0]))/calibration_fac
   elif N_sites == 4:
-     psi_tensor = np.zeros((defs.local_dim, defs.local_dim, defs.local_dim, defs.local_dim), dtype=complex)
-     for i in np.arange(defs.local_dim):
-       for j in np.arange(defs.local_dim):
-         for k in np.arange(defs.local_dim):
-           for l in np.arange(defs.local_dim):
-              psi_tensor[i,j,k,l] = np.dot(psi_mps_form[0].m[i,0,:], np.dot(psi_mps_form[1].m[j,:,:], np.dot(psi_mps_form[2].m[k,:,:], psi_mps_form[3].m[l,:,0])))/calibration_fac
+     psi_tensor = np.zeros((local_dim, local_dim, local_dim, local_dim), dtype=complex)
+     for i in np.arange(local_dim):
+       for j in np.arange(local_dim):
+         for k in np.arange(local_dim):
+           for l in np.arange(local_dim):
+              psi_tensor[i,j,k,l] = np.dot(psi_mps_form.data[0].m[i,0,:], np.dot(psi_mps_form.data[1].m[j,:,:], np.dot(psi_mps_form.data[2].m[k,:,:], psi_mps_form.data[3].m[l,:,0])))/calibration_fac
   elif N_sites == 5:
-     psi_tensor = np.zeros((defs.local_dim, defs.local_dim, defs.local_dim, defs.local_dim, defs.local_dim), dtype=complex)
-     for i in np.arange(defs.local_dim):
-       for j in np.arange(defs.local_dim):
-         for k in np.arange(defs.local_dim):
-           for l in np.arange(defs.local_dim):
-             for n in np.arange(defs.local_dim):
-                 psi_tensor[i,j,k,l,n] = np.dot(psi_mps_form[0].m[i,0,:], np.dot(psi_mps_form[1].m[j,:,:], np.dot(psi_mps_form[2].m[k,:,:], np.dot(psi_mps_form[3].m[l,:,:], psi_mps_form[4].m[n,:,0]))))/calibration_fac
+     psi_tensor = np.zeros((local_dim, local_dim, local_dim, local_dim, local_dim), dtype=complex)
+     for i in np.arange(local_dim):
+       for j in np.arange(local_dim):
+         for k in np.arange(local_dim):
+           for l in np.arange(local_dim):
+             for n in np.arange(local_dim):
+                 psi_tensor[i,j,k,l,n] = np.dot(psi_mps_form.data[0].m[i,0,:], np.dot(psi_mps_form.data[1].m[j,:,:], np.dot(psi_mps_form.data[2].m[k,:,:], np.dot(psi_mps_form.data[3].m[l,:,:], psi_mps_form.data[4].m[n,:,0]))))/calibration_fac
   
   #After the calculation, print out the psi_tensor
   if N_sites == 3:
 
-    for i in np.arange(defs.local_dim):
-      for j in np.arange(defs.local_dim):
-        for k in np.arange(defs.local_dim):
+    for i in np.arange(local_dim):
+      for j in np.arange(local_dim):
+        for k in np.arange(local_dim):
 
            if np.absolute(psi_tensor[i,j,k].imag) < 10**(-4):
                 psi_tensor[i,j,k] = psi_tensor[i,j,k].real + 0j
@@ -253,10 +251,10 @@ def verify_psi_coeff_tensor(psi_mps_form, calibration_fac, N_sites):
 
   elif N_sites == 4:
 
-    for i in np.arange(defs.local_dim):
-      for j in np.arange(defs.local_dim):
-        for k in np.arange(defs.local_dim):
-          for l in np.arange(defs.local_dim):
+    for i in np.arange(local_dim):
+      for j in np.arange(local_dim):
+        for k in np.arange(local_dim):
+          for l in np.arange(local_dim):
 
              if np.absolute(psi_tensor[i,j,k,l].imag) < 10**(-4):
                  psi_tensor[i,j,k,l] = psi_tensor[i,j,k,l].real + 0j
@@ -269,11 +267,11 @@ def verify_psi_coeff_tensor(psi_mps_form, calibration_fac, N_sites):
 
   elif N_sites == 5:
 
-    for i in np.arange(defs.local_dim):
-      for j in np.arange(defs.local_dim):
-        for k in np.arange(defs.local_dim):
-          for l in np.arange(defs.local_dim):
-            for n in np.arange(defs.local_dim):
+    for i in np.arange(local_dim):
+      for j in np.arange(local_dim):
+        for k in np.arange(local_dim):
+          for l in np.arange(local_dim):
+            for n in np.arange(local_dim):
 
                if np.absolute(psi_tensor[i,j,k,l,n].imag) < 10**(-4):
                    psi_tensor[i,j,k,l,n] = psi_tensor[i,j,k,l,n].real + 0j
