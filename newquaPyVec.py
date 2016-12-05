@@ -229,7 +229,7 @@ def quapi(mod,eigl,eta,dkm,ham,dt,initrho,ntot,filename):
             #print data to check its coming out
             #extract pop difference and append to data
             data.append([(j+1+dkm)*dt,augN])
-            print [(j+1+dkm)*dt,augN]
+            #print [(j+1+dkm)*dt,augN]
             #pad aug ready for propagation one step forward
             aug=repeat(expand_dims(aug,-1),l**2,-1)
             #multiply in propagator and
@@ -350,22 +350,14 @@ def gr_mpostartsite(eigl,dkm,k,n,ham,dt):
                     tab[i1][j1][0][a1]=tens[j1][i1]
     return tab
     
-def gr_mpostartsite2(eigl,dkm,k,n,ham,dt):
+def gr_mpoedge(eigl):
     l=len(eigl)
-    #ec is created as a list of all possible pairs of values of the pairs of west/east legs
-    #which are then inserted simultaneously into the expression for the component of the tensor
-    #so that we end up with just a single west leg and a single east leg
-    #initialize the block as tab in the form required for dainius' mpo definitions (south, north,east west)
-    #here the dimension of the east leg is 1 since this is the start site
-    tab=zeros((l**2,l**2,1,1),dtype=complex)
-    #the combination of I0 I1 and K whose components make up the start site tensor
-    tens=itab(eigl,1,k,n,dkm)*itab(eigl,0,k,n,dkm)*freeprop(ham,dt)*itab(eigl,0,0,n,dkm).T
-    #looping through each index and assigning values
+    tab=zeros((l**2,1,l**2,1),dtype=complex)
     for i1 in range(l**2):
-        for j1 in range(l**2):
-            tab[i1][j1][0][0]=tens[j1][i1]
+        for b1 in range(l**2):
+            if (i1==b1):
+                tab[i1][0][b1][0]=1
     return tab
-    
     
 def gr_mpoendsite(eigl,dk,dkm,k,n):
     l=len(eigl)
@@ -383,132 +375,6 @@ def gr_mpoendsite(eigl,dk,dkm,k,n):
                     if j1==a1 and i1==ec[b1][1]:
                         tab[i1][j1][b1][a1]=itab(eigl,dk,k,n,dkm)[j1][ec[b1][0]]
     return tab
-    
-def gr_mpoendsite2(eigl,dk,dkm,k,n):
-    l=len(eigl)
-    ec=zeros((l**2,l**2,2),dtype=int)
-    for j in range(l**2):
-        for kk in range(l**2):
-            ec[j][kk][0]=j
-            ec[j][kk][1]=kk
-    ec=ec.reshape((l**4,2))
-    tab=zeros((l**2,l**2,l**4,1),dtype=complex)
-    for i1 in range(l**2):
-        for j1 in range(l**2):
-            for b1 in range(l**4):
-                for a1 in range(l**2):
-                    if i1==ec[b1][1]:
-                        tab[i1][j1][b1][0]=itab(eigl,dk,k,n,dkm)[j1][ec[b1][0]]
-    return tab
-
-def gr_mpodummymid(eigl):
-    l=len(eigl)
-    tab=zeros((l**2,l**2,l**2,l**2),dtype=complex)
-    for i1 in range(l**2):
-        for j1 in range(l**2):
-            for b1 in range(l**2):
-                for a1 in range(l**2):
-                    if (j1==a1 and i1==a1 and j1==b1 and i1==b1):
-                        tab[i1][j1][b1][a1]=1
-    return tab
-    
-def gr_mpodummyedge(eigl):
-    l=len(eigl)
-    tab=zeros((l**2,l**2,l**2,1),dtype=complex)
-    for i1 in range(l**2):
-        for j1 in range(l**2):
-            for b1 in range(l**2):
-                if (j1==b1 and i1==b1):
-                    tab[i1][j1][b1][0]=1
-    return tab
-    
-def gr_mpodummyedge2(eigl):
-    l=len(eigl)
-    tab=zeros((l**2,l**2,1,1),dtype=complex)
-    for i1 in range(l**2):
-        for j1 in range(l**2):
-            for b1 in range(l**2):
-                if (j1==i1):
-                    tab[i1][j1][0][0]=1
-    return tab
-
-def mpsdummymid(eigl):
-    l=len(eigl)
-    tab=zeros((l**2,l**2,l**2),dtype=complex)
-    for i1 in range(l**2):
-        for b1 in range(l**2):
-            for a1 in range(l**2):
-                if (i1==b1 and i1==a1):
-                    tab[i1][b1][a1]=1
-    return tab
-
-def mpsdummyend(eigl):
-    l=len(eigl)
-    tab=zeros((l**2,l**2,1),dtype=complex)
-    for i1 in range(l**2):
-        for b1 in range(l**2):
-            if i1==b1:
-                tab[i1][b1][0]=1
-    return tab
-
-def mpsdummyend2(eigl):
-    l=len(eigl)
-    tab=zeros((l**2,1,1),dtype=complex)
-    for i1 in range(l**2):
-        tab[i1][0][0]=1
-    return tab
-
-def mpsrho(eigl,rho):
-    l=len(eigl)
-    tab=zeros((l**2,1,l**2),dtype=complex)
-    for i1 in range(l**2):
-        for b1 in range(l**2):
-            if i1==b1:
-                tab[i1][0][b1]=rho[i1]
-    return tab
-    
-def mpsrho2(eigl,rho):
-    l=len(eigl)
-    tab=zeros((l**2,1,1),dtype=complex)
-    for i1 in range(l**2):
-        tab[i1][0][0]=rho[i1]
-    return tab
-    
-def app(eigl):
-    l=len(eigl)
-    tab=df.mps_site(l**2,1,1)
-    tab.m[0,0,0]=1
-    return tab
-#Test stuff
-
-
-#print einsum('ijkl->i',mpomidsite2([-1,1],3,4,5,6)-mpomidsite([-1,1],3,4,5,6))
-
-
-#print einsum('ijkl->l',gr_mpoendsite([-1,1],3,3,5,6))
-
-
-
-'''
-con=einsum('ijkl,mnlo',mpostartsite([-1,1],2,3,4,[[0,1],[1,0]],1),mpoendsite([-1,1],2,2,3,4))
-con=swapaxes(swapaxes(sum(sum(sum(con,2),-1),0),1,2),0,2)
-con2=einsum('ijkl,mnlo',mpostartsite([-1,1],3,4,5,[[0,1],[1,0]],1),mpomidsite([-1,1],2,3,4,5))
-con2=einsum('...i,jkil',con2,mpoendsite([-1,1],3,3,4,5))
-con2=swapaxes(swapaxes(swapaxes(sum(sum(sum(sum(con2,2),-1),0),1),2,3),0,3),1,2)
-#print mpostartsite([-1,1],[[0,1],[1,0]],1).shape
-print con.shape
-print lamtens([-1,1],2,3,4,[[0,1],[1,0]],1)- con
-print con2.shape
-print lamtens([-1,1],3,4,5,[[0,1],[1,0]],1)- con2'''
-#print lamtens([-1,1],1,3,4,[[0,1],[1,0]],1)- sum(sum(mpostartsite([-1,1],[[0,1],[1,0]],1),-1),-1)
-'''con=einsum('...i,jkil->...jkl',con,mpomidsite([-1,1],2))
-print con.shape'''
-
-
-
-'''N_sites=4; defs.local_dim=4; defs.bond_dim=1; defs.opdim=16
-test=defs.mpo_block(defs.opdim,N_sites)
-print test[3].m.shape'''
 
 
 

@@ -36,15 +36,25 @@ class mps_site:
                self.Edim = east_dim
                #initialize tensor on each mps site (all zeros - just an example):
                self.m = np.zeros((self.SNdim, self.Wdim, self.Edim), dtype=complex)
+<<<<<<< HEAD
            elif len(input_tensor.shape) != 3:
                sys.exit("ERROR in mps_site - input_tensor must be a 3D object. Exiting...")
+=======
+          
+>>>>>>> 1b128815e5f15769d6e3cf9e5c025769b49f0646
            elif (south_north_dim != None) or (west_dim != None) or (east_dim != None):
                sys.exit("ERROR in mps_site - if input_tensor is provided, it must be the only input of mps_site. Exiting...")
            else:
                #define dimensions 
+<<<<<<< HEAD
                self.SNdim = input_tensor.shape[0]
                self.Wdim = input_tensor.shape[1]
                self.Edim = input_tensor.shape[2]
+=======
+               self.SNdim = np.shape(input_tensor)[0]
+               self.Wdim = np.shape(input_tensor)[1]
+               self.Edim = np.shape(input_tensor)[2]
+>>>>>>> 1b128815e5f15769d6e3cf9e5c025769b49f0646
                #initialize tensor on each mps site = some input_tensor
                self.m = input_tensor
 
