@@ -44,7 +44,7 @@ Block_Lvec = None; Block_Rvec = None
 #  In mode = 'chi' we can set precision = None ---> the code will then use default values for each bond: chi = sdim_A, chi = opdim_A, etc
 #
 ##############################################################################################################################################
-def multiply_block(mps_block1, mpo_block1, which_mode='fraction', precision=1, delta_chi=1, eval_loop_start=None, eval_loop_end=None):
+def multiply_block(mps_block1, mpo_block1, which_mode='chi', precision=45, delta_chi=1, eval_loop_start=None, eval_loop_end=None):
 
    global intermediate_mps
    
