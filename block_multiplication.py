@@ -3,129 +3,7 @@ import numpy as np
 import copy as cp
 import sys
 from scipy.sparse.linalg import svds, LinearOperator
-<<<<<<< HEAD
 import definitions as defs
-=======
-from definitions import mps_block, mpo_block, mps_site, mpo_site
-
-#Global MPS/MPO variables needed in Arnoldi SVD (called iteratively inside arnoldi svd routine):
-intermediate_mps = None
-mpoX = None; mpsX = None
-#Module level definitions of matrices/vecs needed in Arnoldi SVD (called iteratively inside arnoldi svd routine):
-Block_Ltemp = None; Block_Rtemp = None
-Block_Lvec = None; Block_Rvec = None
-
-
-##############################################################################################################################################
-#
-#  multiply_block
-#
-#  Variables:
-#  mps_block1, mpo_block1 = input generic MPS/MPO blocks
-#  N_sites = length of MPS/MPO blocks
-#
-#  Synopsis:
-#  Sweep over all sites, multiplying MPS & MPO blocks site-by-site. 
-#  Near the ends of chain (smaller tensors) - use lapack SVD
-#  Deeper within the chain (larger tensors) - use arnoldi SVD 
-#
-#  As a final output, the original mps_block=MPS is changed to a
-#  new mps_block=MPS*MPO
-#
-#  Different modes in multiply_block: 'accuracy', 'chi', 'fraction'
-#
-#  Precision = required_accuracy in 'accuracy' mode
-#            = fraction of singular vals to calculate in 'fraction' mode 
-#            = bond_dim in 'chi' mode
-#
-#  eval_loop_start/end input only matters if which_mode='accuracy'
-#  otherwise, they're just set automatically.
-#
-#  Note that the actual eval_frac might be slightly different from the input (requested) eval_frac (e.g. 0.5555 or 0.6666 instead of 0.51)
-#  This is because eval_frac*nev_max is rounded to the nearest integer (sigma_dim = number of singular vals must be integer after all)
-#
-#  In mode = 'chi' we can set precision = None ---> the code will then use default values for each bond: chi = sdim_A, chi = opdim_A, etc
-#
-##############################################################################################################################################
-def multiply_block(mps_block1, mpo_block1, which_mode='chi', precision=45, delta_chi=1, eval_loop_start=None, eval_loop_end=None):
-
-   global intermediate_mps
-   
-   #The code currently works in cases where MPS_length <= MPO_length
-   if (mps_block1.N_sites > mpo_block1.N_sites):
-        sys.exit("ERROR in multiply_block: mpo_block should be equal to or longer than mps_block. Exiting...")
-
-   #Sanity check of the input
-   if (which_mode != 'accuracy'):
-     if (which_mode != 'chi'):
-        if (which_mode != 'fraction'):
-           sys.exit("ERROR in multiply_block: which_mode must be 'accuracy', 'chi', or 'fraction'. Exiting...")
-
-   #Sanity check of the input
-   if (which_mode == "accuracy") or (which_mode == "fraction"):  
-      #Note that both [fraction of evals] and [accuracy = ratio of smallest & largest sigma] must be between 0 and 1
-      if (precision < 0) or (precision > 1) or (precision == None):
-          sys.exit("ERROR in multiply_block: precision must be between 0 and 1. Exiting...")
-   elif (which_mode == "chi"):
-      if not (precision == None):
-         if not isinstance(precision,int) or not (precision > 0): 
-            sys.exit("ERROR in multiply_block: precision must be a positive integer or equal to None. Exiting...")
-                
-   #Sanity check of the input
-   if which_mode == "accuracy":
-
-      if not (eval_loop_start == None):
-         if not isinstance(eval_loop_start,int) or not (eval_loop_start > 0):
-            sys.exit("ERROR in multiply_block: eval_loop_start must be a positive integer or equal to None. Exiting...")
-
-      if not (eval_loop_end == None): 
-         if not isinstance(eval_loop_end,int) or not (eval_loop_end > 0):
-            sys.exit("ERROR in multiply_block: eval_loop_end must be a positive integer or equal to None. Exiting...")
-
-
-   
-
-       
-   #Note that Python numbers its lists from 0 to N-1!!!
-   for site in np.arange(mpo_block1.N_sites):
-
-       #Verify that MPS/MPO have correct South & North dims 
-       if (site < mps_block1.N_sites):
-          if (mpo_block1[site].Ndim == 1):
-              print('Error at site = ', site)
-              sys.exit("ERROR in multiply_block: mpo_block has been set up incorrectly - should have North dim > 1. Exiting...")
-          if (mpo_block1[site].Sdim == 1):
-              print('Error at site = ', site)
-              sys.exit("ERROR in multiply_block: mpo_block has been set up incorrectly - should have South dim > 1. Exiting...")
-          if (mps_block1[site].SNdim == 1):
-              print('Error at site = ', site)
-              sys.exit("ERROR in multiply_block: mpo_block has been set up incorrectly - should have South-North dim > 1. Exiting...")
-
-       ############## PERFORM BLOCK MULTIPLICATION AND SVD #############################################################################################
-    
-       if (site == 0):
-           #Simple mult at site=0, no SVD
-           lapack_multiply_each_site(mps_block1, mpo_block1, site, which_mode, precision, eval_loop_start, eval_loop_end)
-       else:
-           if (site == 1) or (site == mps_block1.N_sites - 1):
-                #use lapack at site=1,N_sites-1
-                lapack_multiply_each_site(mps_block1, mpo_block1, site, which_mode, precision, eval_loop_start, eval_loop_end)
-           elif (site > mps_block1.N_sites - 1):
-                #add the free mpo sites to mps
-                sweep_over_free_mpo_sites(mps_block1, mpo_block1, site, which_mode, precision, eval_loop_start, eval_loop_end)
-           else:
-                #on other sites, use arnoldi by default, but switch to lapack if eval_frac is too large (see arnoldi_multiply_each_site function)
-                arnoldi_multiply_each_site(mps_block1, mpo_block1, site, which_mode, precision, delta_chi, eval_loop_start, eval_loop_end)
-
-      ##################################################################################################################################################
-
-
-   
-
-   return mps_block1
-   
-
->>>>>>> 1b128815e5f15769d6e3cf9e5c025769b49f0646
 
 
 ###########################################################################
@@ -153,7 +31,6 @@ def multiply_block(mps_block1, mpo_block1, which_mode='chi', precision=45, delta
 #   
 ############################################################################
 def lapack_multiply_each_site(mps_block, mpo_block, intermediate_mps, site, which_mode, precision, eval_loop_start, eval_loop_end):
-
 
    #find dims of the tensor objects we're dealing with
    Wdim_A, SNdim_A, SNdim_B, opdim_A, sdim_A, opdim_B, sdim_B = get_dims_of_mpo_mps(intermediate_mps, mps_block.data[site], mpo_block.data[site])
