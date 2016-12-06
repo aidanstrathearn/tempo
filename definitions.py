@@ -29,7 +29,7 @@ class mps_site:
 
       def __init__(self, south_north_dim = None, west_dim = None, east_dim = None, input_tensor = None):
 
-           if (input_tensor == None):
+           if (input_tensor is None):
                #define dimensions 
                self.SNdim = south_north_dim
                self.Wdim = west_dim
@@ -50,7 +50,7 @@ class mps_site:
 
       def update_site(self, south_north_dim = None, west_dim = None, east_dim = None, input_tensor = None):
 
-           if (input_tensor == None):
+           if (input_tensor is None):
                #define dimensions 
                self.SNdim = south_north_dim
                self.Wdim = west_dim
@@ -90,7 +90,7 @@ class mpo_site:
 
       def __init__(self, south_dim = None, north_dim = None, west_dim = None, east_dim = None, input_tensor = None):
 
-         if (input_tensor == None):
+         if (input_tensor is None):
             #define dimensions 
             self.Sdim = south_dim
             self.Ndim = north_dim
@@ -154,7 +154,11 @@ class mpo_block:
                     self.data.append(mpo_site(local_dim, 1, opdim, 1))
                  else:
                     self.data.append(mpo_site(local_dim, local_dim, opdim, opdim))
-
+          
+      def append_site(self, tensor_to_append):
+    #Append a new site
+         self.data.append(mpo_site(input_tensor = tensor_to_append))
+         self.N_sites = self.N_sites + 1 
 
 
 
@@ -243,17 +247,19 @@ class mps_block(mpo_block):
              SNdim = self.data[site].SNdim; Wdim = self.data[site].Wdim; Edim = self.data[site].Edim
              mps_expanded.data[site].m[0:SNdim, 0:Wdim, 0:Edim] = cp.deepcopy(self.data[site].m)
 
-      def append_mps_site(self, tensor_to_append):
-    
-          #Append function only supports mps_site with Wdim = Edim = 1
-          if (tensor_to_append.shape[1] != 1) or (tensor_to_append.shape[2] != 1):
-            sys.exit("ERROR in append_mps_site - input_tensor must have Wdim = 1, Edim = 1. Exiting...")
+      def append_site(self, tensor_to_append):
           #Append a new site
           self.data.append(mps_site(input_tensor = tensor_to_append))
           self.N_sites = self.N_sites + 1 
-          print('New site appended to mps_block - increasing the length from', self.N_sites - 1, 'to', self.N_sites)
 
-
+      def readout(self):
+          ns=self.N_sites
+          rh=np.einsum('ijk->ik',self.data[0].m)
+          for jj in range(1,ns-1):
+            rh=np.einsum('ij,jk',rh,np.einsum('ijk->jk',self.data[jj].m))
+   
+          rh=np.einsum('ij,j',rh,np.einsum('ijk->j',self.data[ns-1].m))
+          return rh
       ##############################################################################################################################################
       #
       #  multiply_block
@@ -322,10 +328,10 @@ class mps_block(mpo_block):
               sys.exit("ERROR in multiply_block: first site of MPS must have West dim = 1. Exiting...")
           if (mpo_block.data[0].Wdim != 1):
               sys.exit("ERROR in multiply_block: first site of MPO must have West dim = 1. Exiting...")
-          if (self.data[self.N_sites - 1].Edim != 1):
-              sys.exit("ERROR in multiply_block: last site of MPS must have East dim = 1. Exiting...")
-          if (mpo_block.data[mpo_block.N_sites - 1].Edim != 1):
-              sys.exit("ERROR in multiply_block: last site of MPO must have East dim = 1. Exiting...")
+          #if (self.data[self.N_sites - 1].Edim != 1):
+          #    sys.exit("ERROR in multiply_block: last site of MPS must have East dim = 1. Exiting...")
+          #if (mpo_block.data[mpo_block.N_sites - 1].Edim != 1):
+          #    sys.exit("ERROR in multiply_block: last site of MPO must have East dim = 1. Exiting...")
 
        
           #Note that Python numbers its lists from 0 to N-1!!!
@@ -365,8 +371,8 @@ class mps_block(mpo_block):
           #Check that ends of output MPS have bond_dim = 1
           if (self.data[0].Wdim != 1):
               sys.exit("OUTPUT ERROR in multiply_block: first site of OUTPUT MPS must have West dim = 1. Exiting...")
-          if (self.data[self.N_sites - 1].Edim != 1):
-              sys.exit("OUTPUT ERROR in multiply_block: last site of OUTPUT MPS must have East dim = 1. Exiting...")
+          #if (self.data[self.N_sites - 1].Edim != 1):
+          #   sys.exit("OUTPUT ERROR in multiply_block: last site of OUTPUT MPS must have East dim = 1. Exiting...")
 
           #return mps_block1
 
