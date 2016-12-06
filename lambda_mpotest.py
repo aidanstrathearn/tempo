@@ -143,9 +143,12 @@ qp.quapi(0,eigs,eta,dkmax,hamil,delt,irho,nsteps,"tempocheck")
 f=open("tempocheck"+str(dkmax)+".pickle")
 myf=pickle.load(f)
 
-#comparing - keeping all sv's reproduces quapi results
+#comparing a datpoint- keeping all sv's reproduces quapi results
+print 'TEMPO data:'
 print datf[8][1]
+print 'QUAPI data:'
 print myf[8][1]
+print 'Trace of tempo data (bond truncuation seems to affect trace preservation and hermiticity):'
 print datf[8][1][0]+datf[8][1][3]
 
 
