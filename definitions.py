@@ -25,7 +25,7 @@ from block_multiplication import lapack_multiply_each_site, arnoldi_multiply_eac
 #   Defines a single site of MPS - a rank-3 tensor with 3 legs
 #
 ###########################################################################
-class mps_site:
+class mps_site(object):
 
       def __init__(self, south_north_dim = None, west_dim = None, east_dim = None, input_tensor = None):
 
@@ -124,7 +124,7 @@ class mpo_site:
 #   Set Wdim,Edim = operator bond dim to the west & to the east of a site 
 #   Note that operator bond dim = 1 at the ends of the MPO chain
 ########################################################################### 
-class mpo_block:
+class mpo_block(object):
 
       #the procedure w/ local_dim, op_dim should be an instance instead! (or not?)
       def __init__(self, local_dim, opdim, N_sites, length_of_mps_block = None):
@@ -138,7 +138,7 @@ class mpo_block:
           #Note that Python numbers its lists from 0 to N-1!!!
           for site in np.arange(N_sites):
 
-              if (length_of_mps_block == None) or (length_of_mps_block == N_sites):
+              if (length_of_mps_block is None) or (length_of_mps_block == N_sites):
                  if site == 0:
                     self.data.append(mpo_site(local_dim, local_dim, 1, opdim))
                  elif site == N_sites-1:
@@ -304,21 +304,21 @@ class mps_block(mpo_block):
           #Sanity check of the input
           if (which_mode == "accuracy") or (which_mode == "fraction"):  
               #Note that both [fraction of evals] and [accuracy = ratio of smallest & largest sigma] must be between 0 and 1
-              if (precision < 0) or (precision > 1) or (precision == None):
+              if (precision < 0) or (precision > 1) or (precision is None):
                  sys.exit("ERROR in multiply_block: precision must be between 0 and 1. Exiting...")
           elif (which_mode == "chi"):
-             if not (precision == None):
+             if not (precision is None):
                 if not isinstance(precision,int) or not (precision > 0): 
                   sys.exit("ERROR in multiply_block: precision must be a positive integer or equal to None. Exiting...")
                 
           #Sanity check of the input
           if which_mode == "accuracy":
 
-             if not (eval_loop_start == None):
+             if not (eval_loop_start is None):
                 if not isinstance(eval_loop_start,int) or not (eval_loop_start > 0):
                    sys.exit("ERROR in multiply_block: eval_loop_start must be a positive integer or equal to None. Exiting...")
 
-             if not (eval_loop_end == None): 
+             if not (eval_loop_end is None): 
                 if not isinstance(eval_loop_end,int) or not (eval_loop_end > 0):
                    sys.exit("ERROR in multiply_block: eval_loop_end must be a positive integer or equal to None. Exiting...")
 
