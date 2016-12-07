@@ -86,7 +86,7 @@ class mps_site(object):
 #   Defines a single site of MPO - a rank-4 tensor with 4 legs
 #
 ########################################################################### 
-class mpo_site:
+class mpo_site(object):
 
       def __init__(self, south_dim = None, north_dim = None, west_dim = None, east_dim = None, input_tensor = None):
 
