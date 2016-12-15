@@ -6,6 +6,7 @@ from scipy.sparse.linalg import svds, LinearOperator
 import definitions as defs
 
 
+
 ###########################################################################
 #
 #  lapack_multiply_each site
@@ -65,6 +66,10 @@ def lapack_multiply_each_site(mps_block, mpo_block, intermediate_mps, site, whic
      print('starting LAPACK SVD at site = ', site)
      U, S, VH = perform_lapack_svd(theta, which_mode, precision, eval_loop_start, eval_loop_end, current_chi, nev_max)
      
+     print len(S)
+     print np.amin(S)
+     print np.amax(S)
+     print S
      #Copy back SVD results to mps_block
      intermediate_mps = copy_back_svd_results(mps_block, mpo_block, intermediate_mps, site, U, S, VH)      
 
@@ -102,16 +107,21 @@ def perform_lapack_svd(theta, which_mode, precision, eval_loop_start, eval_loop_
 
      ##### PERFORM LAPACK SVD USING INPUT THETA ##########
      U, S, VH = np.linalg.svd(theta, full_matrices=True)
+     
+     print np.amax(S)
+     print np.amin(S)
+     
+     print S
 
      if (which_mode == 'fraction') or (which_mode == 'chi'):
 
           #If requested sigma_dim > nev_max ---> set sigma_dim = nev_max 
           if (sigma_dim > nev_max):
                sigma_dim = nev_max
-               print('LAPACK: the requested number of singular values is larger than nev_max. Setting sigma_dim = nev_max')
+               #print('LAPACK: the requested number of singular values is larger than nev_max. Setting sigma_dim = nev_max')
 
-          print('LAPACK completed, number of singular vals: ', sigma_dim, 'eval frac = ', sigma_dim/float(nev_max))
-          print(' ')
+          #print('LAPACK completed, number of singular vals: ', sigma_dim, 'eval frac = ', sigma_dim/float(nev_max))
+          #print(' ')
 
           #return svd matrices & exit the loop
           U = U[:, 0:sigma_dim]; VH = VH[0:sigma_dim, :]; S = S[0:sigma_dim]
@@ -228,6 +238,11 @@ def arnoldi_multiply_each_site(mps_block, mpo_block, intermediate_mps, site, whi
    ##### PERFORM ARNOLDI SVD ##########
    print('starting ARNOLDI SVD at site = ', site)
    U, S, VH = perform_arnoldi_svd(theta, which_mode, precision, delta_chi, eval_loop_start, current_chi, VH_rdim, nev_max)
+   
+   print np.amax(S)
+   print np.amin(S)
+   
+   print S
 
    if (U == None) and (VH == None):
      ##### SWITCH TO LAPACK SVD

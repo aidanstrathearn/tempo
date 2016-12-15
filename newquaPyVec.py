@@ -4,7 +4,7 @@ import time
 from scipy.linalg import expm
 import pickle
 import lineshapes as ln
-import definitions as df
+import definitions2 as df
 
 def mcoeffs(mod,et,dk,dt,ntot):
     #function to calculate coeffs for a given lineshape et, delta_k_max dk, timestep dt, and number of
@@ -352,11 +352,11 @@ def gr_mpostartsite(eigl,dkm,k,n,ham,dt):
     
 def gr_mpoedge(eigl):
     l=len(eigl)
-    tab=zeros((l**2,1,l**2,1),dtype=complex)
+    tab=zeros((l**2,l**2,1),dtype=complex)
     for i1 in range(l**2):
         for b1 in range(l**2):
             if (i1==b1):
-                tab[i1][0][b1][0]=1
+                tab[i1][b1][0]=1
     return tab
     
 def gr_mpoendsite(eigl,dk,dkm,k,n):
@@ -375,7 +375,6 @@ def gr_mpoendsite(eigl,dk,dkm,k,n):
                     if j1==a1 and i1==ec[b1][1]:
                         tab[i1][j1][b1][a1]=itab(eigl,dk,k,n,dkm)[j1][ec[b1][0]]
     return tab
-
 
 
 #Timings per data point on my laptop

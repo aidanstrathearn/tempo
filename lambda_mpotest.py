@@ -2,9 +2,9 @@ import newquaPyVec as qp
 import definitions as df
 import lineshapes as ln
 import numpy as np
-import block_multiplication
 import pickle
 import copy
+import time
 
 def create_block(eigl,ham,dt,dkm,k,n):
     #function that creates an mpo block for:
@@ -53,6 +53,7 @@ def growth(rho,eigl,eta,ham,dt,dkm,n,ntot,svals,pr):
     #since we cant do the svd on a single site block this first step is just done with einsum  
     gmps.data[0]=df.mps_site(input_tensor=np.einsum('i,jikl',rho,qp.gr_mpostartsite(eigl,dkm,1,n,ham,dt)))
     #grow the block by 1 site with the delta function edge tensor
+    
     gmps.append_site(qp.gr_mpoedge(eigl))
     #loop through multipling mpo into mps then growing the mps by one site
     for jj in range(0,dkm-2):
@@ -63,25 +64,26 @@ def growth(rho,eigl,eta,ham,dt,dkm,n,ntot,svals,pr):
     gmps.multiply_block(create_block(eigl,ham,dt,dkm,dkm,n),svds[svals],pr)
     return gmps,datlis
     
-def growth_alg(rho,eigl,eta,ham,dt,dkm,n,ntot,svals,pr):
+def growth_alg(mod,rho,eigl,eta,ham,dt,dkm,n,ntot,svals,pr):
     #the same as growth but records data for each timestep during growth
     #acheived by at each step making a copy of the mps (mpsN) and multiplying 
     #it with the termination mpo, reading out data from this,
     #then growing the original mps (gmps) one more site and repeating
     datlis=[[0,rho]]
-    qp.ctab=qp.mcoeffs(0,eta,dkm,dt,ntot)
+    qp.ctab=qp.mcoeffs(mod,eta,dkm,dt,ntot)
     l=len(eigl)
     svds=['fraction','accuracy','chi']
     gmps=df.mps_block(l**2,l**2,2)
     
-    mpos=qp.gr_mpostartsite(eigl,dkm,1,1,ham,dt)
-    gmps.data[0].m=np.einsum('i,jikl',rho,mpos)
+    gmps.data[0].m=np.einsum('i,jikl',rho,qp.gr_mpostartsite(eigl,dkm,1,1,ham,dt))
     gmps.data[1].m=qp.gr_mpoedge(eigl)
     datlis.append([dt,gmps.readout()])
     
-    mpos=qp.gr_mpostartsite(eigl,dkm,1,n,ham,dt)
-    gmps.data[0].m=np.einsum('i,jikl',rho,mpos)
+    gmps.data[0].m=np.einsum('i,jikl',rho,qp.gr_mpostartsite(eigl,dkm,1,n,ham,dt))
     gmps.data[1].m=qp.gr_mpoedge(eigl)
+    ss,uu,vv=np.linalg.svd(np.einsum('ijk->ik',gmps.data[0].m), full_matrices=True)
+    print uu
+    print gmps.data[0].m.shape
     for jj in range(0,dkm-2):
         mpsN=copy.deepcopy(gmps)
         mpsN.multiply_block(create_block(eigl,ham,dt,dkm,jj+2,jj+2),svds[svals],pr)
@@ -89,6 +91,7 @@ def growth_alg(rho,eigl,eta,ham,dt,dkm,n,ntot,svals,pr):
         del mpsN
         gmps.multiply_block(create_block(eigl,ham,dt,dkm,jj+2,n),svds[svals],pr)
         gmps.append_site(qp.gr_mpoedge(eigl))
+        print "timestep: " +str(jj)
     
     mpsN=copy.deepcopy(gmps)
     mpsN.multiply_block(create_block(eigl,ham,dt,dkm,dkm,dkm),svds[svals],pr)
@@ -97,85 +100,105 @@ def growth_alg(rho,eigl,eta,ham,dt,dkm,n,ntot,svals,pr):
     gmps.multiply_block(create_block(eigl,ham,dt,dkm,dkm,n),svds[svals],pr)
     return gmps,datlis
     
-def tempo(eigl,eta,dkm,ham,dt,rho,ntot,c,p):
+def tempo(mod,eigl,eta,dkm,ham,dt,rho,ntot,filename,c,p):
+    t0=time.time()
     #algorithm to run tempo
     #c lables svd option in svds list and p is the precision option
     svds=['fraction','accuracy','chi']
     #first calls growth_alg to obtain initial data and mps - and create makri coeffs
-    mps,datlis=growth_alg(rho,eigl,eta,ham,dt,dkm,dkm+1,ntot,c,p)
-    #creates bulk propagation mpo
-    mpo=create_block(eigl,ham,dt,dkm,dkm+1,dkm+2)
-    #creates bulk propagtion temination mpo
-    mpoterm=create_block(eigl,ham,dt,dkm,dkm+1,dkm+1)
-    #loops through copying mps, terminating, reading out, then multiplying mps
-    for jj in range(ntot-dkm):
-        mpsN=copy.deepcopy(mps)
-        mpsN.multiply_block(mpoterm,svds[c],p)
-        datlis.append([(dkm+jj+1)*dt,mpsN.readout()])
-        del mpsN
-        mps.multiply_block(mpo,svds[c],p)
+    mps,datlis=growth_alg(mod,rho,eigl,eta,ham,dt,dkm,dkm+1,ntot,c,p)
+    
+    if mod==0:
+        
+        #creates bulk propagation mpo
+        mpo=create_block(eigl,ham,dt,dkm,dkm+1,dkm+2)
+        #creates bulk propagtion temination mpo
+        mpoterm=create_block(eigl,ham,dt,dkm,dkm+1,dkm+1)
+        #loops through copying mps, terminating, reading out, then multiplying mps
+        for jj in range(ntot-dkm):
+            print "timestep: " +str(jj+dkm+1)
+            mpsN=copy.deepcopy(mps)
+            mpsN.multiply_block(mpoterm,svds[c],p)
+            datlis.append([(dkm+jj+1)*dt,mpsN.readout()])
+            del mpsN
+            mps.multiply_block(mpo,svds[c],p)
+    
+    else:
+        for jj in range(ntot-dkm):
+            print "timestep: " +str(jj+dkm+1)
+            mpsN=copy.deepcopy(mps)
+            mpsN.multiply_block(create_block(eigl,ham,dt,dkm,mod*jj+dkm+1,mod*jj+dkm+1),svds[c],p)
+            datlis.append([(dkm+jj+1)*dt,mpsN.readout()])
+            del mpsN
+            mps.multiply_block(create_block(eigl,ham,dt,dkm,mod*jj+dkm+1,mod*jj+dkm+2),svds[c],p)
+    
+    
     #returns list of data
+    print "Time for tempo algorithm: "+str(time.time()-t0)
+    print "method: " +str(c)+" precision: " +str(p)
+    #pickles data for later use but also returns it if you want to use itimmediately
+    datfilep=open(filename+str(dkm)+".pickle","w")
+    pickle.dump(datlis,datfilep)
+    datfilep.close()
+
     return datlis
+    
 
 #defininf the lineshape used to find the makri coeffs
 def eta(t):
-    return ln.eta_0T(t,3,1,0.5)
+    return ln.eta_0T(t,3,1,0.5*2)
+    
+def eta2(t):
+    return 10*t**2
     
 #some test parameters
 hamil=[[0,1],[1,0]]
 eigs=[-1,1]
 delt=0.1
-nsteps=8
+nsteps=10
 hdim=len(eigs)
 irho=[1,0,0,0]
-
+meth=2
+vals=90
+modc=0
 #defining local and operator dimensions
 df.local_dim=hdim**2
-dkmax=5
+dkmax=10
+
+location="C:\\Users\\admin\\Desktop\\phd\\tempodata\\"
 
 
 
 #get tempo data
-datf=tempo(eigs,eta,dkmax,hamil,delt,irho,nsteps,0,1)
-
+tempo(modc,eigs,eta,dkmax,hamil,delt,irho,nsteps,location+"test",meth,vals)
 #get quapi dat
-qp.quapi(0,eigs,eta,dkmax,hamil,delt,irho,nsteps,"tempocheck")
-f=open("tempocheck"+str(dkmax)+".pickle")
-myf=pickle.load(f)
+qp.quapi(modc,eigs,eta,dkmax,hamil,delt,irho,nsteps,location+"tempocheck")
+
+tdat=open(location+"test"+str(dkmax)+".pickle")
+mytdat=pickle.load(tdat)
+tdat.close()
+dd=open(location+"test"+str(dkmax)+".dat","w")
+for k in range(0,len(mytdat)):
+    dd.write(str(mytdat[k][0])+" "+str(2*(mytdat[k][1][1]).real)+" "+str(2*(mytdat[k][1][1]).imag)+" "+str((mytdat[k][1][0]-mytdat[k][1][3]).real)+"\n")
+dd.close()
+
+qdat=open(location+"tempocheck"+str(dkmax)+".pickle")
+myqdat=pickle.load(qdat)
+qdat.close()
+dd=open(location+"tempocheck"+str(dkmax)+".dat","w")
+for k in range(0,len(myqdat)):
+    dd.write(str(myqdat[k][0])+" "+str(2*(myqdat[k][1][1]).real)+" "+str(2*(myqdat[k][1][1]).imag)+" "+str((myqdat[k][1][0]-myqdat[k][1][3]).real)+"\n")
+dd.close()
 
 #comparing a datpoint- keeping all sv's reproduces quapi results
 print 'TEMPO data:'
-print datf[8][1]
+print mytdat[8][1]
 print 'QUAPI data:'
-print myf[8][1]
+print myqdat[8][1]
 print 'Trace of tempo data (bond truncuation seems to affect trace preservation and hermiticity):'
-print datf[8][1][0]+datf[8][1][3]
+print myqdat[8][1][0]+mytdat[8][1][3]
 
-
-'''
-print df.mps_site(input_tensor=np.einsum('ijkl->ikl',qp.gr_mpoedge(eigs)),t=1).m.shape
-print df.mps_site(input_tensor=np.einsum('ijkl->ikl',qp.gr_mpoedge(eigs)),t=1).SNdim
-print df.mps_site(input_tensor=np.einsum('ijkl->ikl',qp.gr_mpoedge(eigs)),t=1).Wdim
-print df.mps_site(input_tensor=np.einsum('ijkl->ikl',qp.gr_mpoedge(eigs)),t=1).Edim'''
-
-'''clis=['fraction','accuracy','chi']
-p=65
-c=2
-mps_s2=growth(irho,eigs,eta,hamil,delt,5,7,10,c,p)
-bm.multiply_block(mps_s2,create_block(eigs,eta,hamil,delt,5,6,7,10),clis[c],p)
-bm.multiply_block(mps_s2,create_block(eigs,eta,hamil,delt,5,7,7,10),clis[c],p)
-print mps_s2[0].m.shape
-print mps_s2[1].m.shape
-print mps_s2[2].m.shape
-print mps_s2[3].m.shape
-print mps_s2[4].m.shape
-
-print mps_readout(mps_s2)'''
 #print np.einsum('ijkl->i',np.einsum('ijk,lkm',np.einsum('ijkl->ikl',np.einsum('ijk,lkn',mps_s2[0].m,mps_s2[1].m)),mps_s2[2].m))
-
-#print alg(irho,eigs,eta,hamil,delt,3,5)
-
-
 
 
 '''   
