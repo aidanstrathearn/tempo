@@ -1,0 +1,81 @@
+
+
+
+1) use local_dim as input to mps_block, etc - not a global variable
+
+2) Make mps_block subclass of mpo_block; mpo_site & mps_site should exist as they are; subclasses superclasses - via inheritance
+
+3) Use "try catch error" instead of sys.exit
+
+4) Remove inheritance of mpo_block from mpo_site ---> should work just fine, just the same (mpo_block inheriting from mpo_site means mpo_block.Wdim exists for mpo_block)
+
+Also, don't inherit from list!
+
+mpo_block.data[0]; mpo_block.data[0].m = tensor; mpo_block.data[0].Wdim; 
+
+
+
+5) Use a new routine change_matrix(matrix) which is a method of mps_site instead of __init__ -- function all the same, but not using _init_ makes a diff
+
+
+
+6) truncate SVD matrices u, vh, s inside perform_lapack_svd, then pass on to copy_svd_res the truncated (not whole) matrices. No truncation in copy_svd_res happens then. (Arnoldi doesnt care about that anyway) - e.g. if you get sigma_dim and S to pass it on, you might as well truncate S on the spot & pass on the truncated S
+
+
+use f(v), v = tuple contains a list of variables, which we pass on, then tuple get unpacked by the function - we take only Vi input vector & app op to it.
+
+mpsX
+
+theta = LinearOperator(matvec=arnoldi_app_op_to_vec, rmatvec=arnoldi_app_HC_op_to_vec, matmat=arnoldi_mult_mat_by_mat, shape=(SNdim_A*Wdim_A, SNdim_B*sdim_B*opdim_B))
+
+U, S, VH = svds(theta, k=sigma_dim, ncv=np.minimum(3*sigma_dim+1,VH_rdim), tol=10**(-5), which='LM', v0=None, maxiter=10*sigma_dim, return_singular_vectors=True)
+
+def arnoldi_app_op_to_vec(Vi):
+
+
+7) multiply_block - a method of mps_block? import definition in mult_block & import mult_block in definitions at the same time ---> works all fine (no danger of circular references)
+
+
+8) Alternative to current block_mult method (only as an alternative, no need to implement this): define mps_block.append method which calls list append & does N = N + 1 (but no inheritance from list!); an extra mps_site in this particular case has bond dim = 1 so appending will be straightforward
+
+NO APPENDING IN MPO!!!
+
+
+
+-----------------------------------------------------------
+
+9) Extra notes: the use of arnoldi_mult_site.lin_op_objects ---> resorting to this since I can't find a way to input anything into matvec, rmatvec, etc
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
