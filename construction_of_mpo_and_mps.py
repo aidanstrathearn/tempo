@@ -2,10 +2,10 @@ import math
 import numpy as np
 import sys
 import copy as cp
-import definitions
 import pauli_matrices as Sigma
 import spin_1_matrices as Spin
-import block_multiplication as mult
+#from MpsMpo_site_level_operations import mpo_site, mps_site
+from MpsMpo_block_level_operations import mpo_block, mps_block
 
 
 #Construct the AKLT Hamiltonian
@@ -190,18 +190,19 @@ def construct_aklt_ground_state_wavef(psi_ket, psi_bra, N_sites):
 #Find psi_bra from psi_ket, and normalize both wavefunctions
 def normalize_mps_blocks(psi_ket, psi_bra, N_sites):
  
-   #Get psi_bra from psi_ket
-   psi_ket.copy_mps_block(psi_bra, N_sites, True)
+   #Copy psi_ket to produce psi_bra (unnormalized)
+   psi_ket.copy_mps(psi_bra, True)
 
    #Find normalization <psi_ket|psi_bra> = c_norm
-   c_norm = mult.contract_two_mps(psi_ket, psi_bra)
+   c_norm = psi_ket.contract_with_mps(psi_bra)
    print('c_norm proofreading within: ', c_norm)
 
    #normalize psi_ket site-by-site
    for site in np.arange(N_sites):
        psi_ket.data[site].m = psi_ket.data[site].m/np.absolute(c_norm**(0.5/N_sites))
-   #Get normalized psi_bra from psi_ket
-   psi_ket.copy_mps_block(psi_bra, N_sites, True)
+
+   #Copy normalized psi_ket to produce normalized psi_bra
+   psi_ket.copy_mps(psi_bra, True)
     
 
 
