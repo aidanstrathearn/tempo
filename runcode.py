@@ -1,41 +1,54 @@
-import newquaPy as qp
+import newquaPyVec as qp
 import numpy as np
 import pickle
 import lineshapes as ln
 
-mod=0
-#test hamiltonian
 hamil=[[0,1],[1,0]]
-#test timestep delta t
-delt=0.1
-#initial state
 rho0=np.array([[1,0],[0,0]])
-#cutoff frequency
-wcut=4
-#coupling strength
-A=1.2
-#delta_k_max
-dkmax=5
-#number of steps to propagate
-nsteps=30
-#creating ctab - for ohmic spectral density at 0 temperature with cutoff frequency
-#and coupling strength A
-#eigenvalues of coupled system operator
+wcut=1
+A=0.5*wcut**(-2)*0.1
 eigs=[-1,1]
-T=3
-mu=2
+T=1
+dks=8
+dk=8
+ls=10
+lf=10
+location="C:\\Users\\admin\\Desktop\\phd\\paperplots\\newdat"
+oper=[[0,0],[1,0]]
 
-#defining the lineshape to be used in quapi from lineshapes.py
-def eta(t):
-        return ln.eta_sp_s3(t,T,wcut,mu,A)
-
-print qp.quapi(mod,eigs,eta,dkmax,hamil,delt,rho0,nsteps,"filename")
+qp.trot=0
+mod=1
 
 
+for ll in range(ls,lf+1):
+    for j in range(dks,dk+1):
+        def eta(t):
+            return ln.eta_g(t,0.2,1.2,5,0.01)
+        qp.quapi(mod,eigs,eta,j,hamil,1,rho0,10*j,location+"\\mod"+str(mod)+"_a"+str(ll)+"_dk")
 
 
-print "\n pickle data: \n"
-f=open("filename"+str(dkmax)+".pickle")
-myf=pickle.load(f)
-f.close()
-print myf
+#def eta(t):
+#            return ln.eta_g(t,1,3,1,0.5*0.5)
+
+for ll in range(ls,lf+1):
+    for j in range(dks,dk+1):
+        f=open(location+"\\mod"+str(mod)+"_a"+str(ll)+"_dk"+str(j)+".pickle")
+        myf=pickle.load(f)
+        mathf=open(location+"\\mod"+str(mod)+"_a"+str(ll)+"_dk"+str(j)+".dat","w")
+        for k in range(0,len(myf)):
+            mathf.write(str(myf[k][0])+" "+str(2*(myf[k][1][1]).real)+" "+str(2*(myf[k][1][1]).imag)+" "+str((myf[k][1][0]-myf[k][1][3]).real)+"\n")
+        mathf.close()
+        f.close()
+
+'''
+for ll in range(ls,lf+1):
+    
+    for j in range(dks,dk+1):
+        f=open(location+"\\mod"+str(mod)+"_a"+str(ll)+"_dk"+str(j)+".pickle")
+        myf=pickle.load(f)
+        mathf=open(location+"\\mod"+str(mod)+"_a"+str(ll)+"_dk"+str(j)+".dat","w")
+        for k in range(0,len(myf)):
+            mathf.write(str(myf[k][0])+" "+str((myf[k][1]).real)+"\n")
+        mathf.close()
+        f.close()
+'''

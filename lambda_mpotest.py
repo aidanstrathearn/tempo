@@ -5,6 +5,8 @@ import numpy as np
 import pickle
 import copy
 import time
+from numpy import linalg as la
+import scipy.sparse.linalg as ssl
 
 def create_block(eigl,ham,dt,dkm,k,n):
     #function that creates an mpo block for:
@@ -71,6 +73,7 @@ def growth_alg(mod,rho,eigl,eta,ham,dt,dkm,n,ntot,svals,pr):
     #then growing the original mps (gmps) one more site and repeating
     datlis=[[0,rho]]
     qp.ctab=qp.mcoeffs(mod,eta,dkm,dt,ntot)
+    print qp.ctab
     l=len(eigl)
     svds=['fraction','accuracy','chi']
     gmps=df.mps_block(l**2,l**2,2)
@@ -158,17 +161,64 @@ delt=0.1
 nsteps=10
 hdim=len(eigs)
 irho=[1,0,0,0]
-meth=2
-vals=90
+meth=0
+vals=1
 modc=0
 #defining local and operator dimensions
 df.local_dim=hdim**2
-dkmax=10
+dkmax=2
+qp.trot=0
+
+qp.ctab=qp.mcoeffs(modc,eta,dkmax,delt,10)
 
 location="C:\\Users\\admin\\Desktop\\phd\\tempodata\\"
 
 
+tar=np.zeros((1,2,3,4,5,6,7,8))
 
+tar=np.rollaxis(tar,2,1)
+print tar.shape
+tar=np.rollaxis(tar,4,2)
+print tar.shape
+tar=np.rollaxis(tar,6,3)
+print tar.shape
+
+def block_contract(block):
+    dkk=block.N_sites
+    init=np.einsum('ijkl,mnlo',block.data[0].m,block.data[1].m)
+    for jj in range(2,dkk):
+        init=np.einsum('...i,jkil',init,block.data[jj].m)
+    init=np.sum(np.sum(init,-1),2)
+    return init
+
+def lam_matrix(mod,eigl,eta,dkm,k,n,ham,dt,ntot):
+    l=len(eigl)
+    qp.ctab=qp.mcoeffs(mod,eta,dkm,dt,ntot)
+    print qp.ctab
+    lmat=block_contract(create_block(eigl,ham,dt,dkm,k,n))
+    #print lmat
+    print 'break2'
+    for jj in range(dkm):
+        lmat=np.rollaxis(lmat,2*jj,jj)
+    #print lmat
+    lmat=np.reshape(lmat,(l**(2*dkm),l**(2*dkm)))
+    print 'breakkkk'   
+    return lmat.T
+
+
+#print lam_matrix(0,[-1,1],eta,2,4,5,hamil,delt,20)
+
+
+eis= la.eig(lam_matrix(0,[-1,1],eta,2,4,5,hamil,delt,20))
+vv=eis[0].real
+print vv
+#print ei.shape
+#print ev.T.shape
+#print ei
+#print ev[:,0]
+
+#print qp.arnoldi_ss(modc,eigs,eta,dkmax,hamil,delt)
+'''
 #get tempo data
 tempo(modc,eigs,eta,dkmax,hamil,delt,irho,nsteps,location+"test",meth,vals)
 #get quapi dat
@@ -199,18 +249,12 @@ print 'Trace of tempo data (bond truncuation seems to affect trace preservation 
 print myqdat[8][1][0]+mytdat[8][1][3]
 
 #print np.einsum('ijkl->i',np.einsum('ijk,lkm',np.einsum('ijkl->ikl',np.einsum('ijk,lkn',mps_s2[0].m,mps_s2[1].m)),mps_s2[2].m))
-
+'''
 
 '''   
 #function to go through contracting the sites in a single block together using einsum
 #to produce the full lambda matrix
-def block_contract(block):
-    dkk=len(block)
-    init=np.einsum('ijkl,mnlo',block[0].m,block[1].m)
-    for jj in range(2,dkk):
-        init=np.einsum('...i,jkil',init,block[jj].m)
-    init=np.sum(np.sum(init,-1),2)
-    return init
+
 
 #contracts all sites in a block to give the full augmented density tensor
 def mps_contract(block):
