@@ -4,7 +4,7 @@ import time
 from scipy.linalg import expm
 import pickle
 import lineshapes as ln
-import definitions as df
+#import definitions as df
 from scipy.sparse.linalg import LinearOperator,eigs
 
 global trot
@@ -240,20 +240,20 @@ def quapi(mod,eigl,eta,dkm,ham,dt,initrho,ntot,filename):
     l=len(eigl)
     t0=time.time()
     rhovec=array(initrho).reshape(l**2)
-    print trot
+    print(trot)
     #full algorithm to find data at dkm+ntot points
     #mod turns on/off the modified coeffs, eigl is the list of eigenvalues of the system
     #operator, eta is the lineshape, dkm is delta_k_max, ham is the hamiltonian, dt is the timestep
     #initrho is the initial state density matrix, ntot is the number of points to propagator after the
     #initial dkm exact points, filename is the name of the file data is saved to
     #eventually coming out as "filename"+str(dkm)+".pickle"
-    print "deltakmax: "+str(dkm)
-    print " # of points: "+str(ntot)
+    print( "deltakmax: "+str(dkm))
+    print( " # of points: "+str(ntot))
     #globally defining ctab since it is called in a previous function but never defined previously
     global ctab
     ctab=mcoeffs(mod,eta,dkm,dt,ntot)
-    print ctab
-    print "Time for coeffs: "+ str(time.time()-t0)
+    print( ctab)
+    print( "Time for coeffs: "+ str(time.time()-t0))
     #first do the dkm points that are exact and initialize data to this
     t1=time.time()
     data=exact(eigl,dkm,ham,dt,rhovec)
@@ -298,7 +298,7 @@ def quapi(mod,eigl,eta,dkm,ham,dt,initrho,ntot,filename):
                 #print data to check its coming out
                 #extract pop difference and append to data
                 data.append([(j+1+dkm)*dt,augN])
-                print [(j+1+dkm)*dt,augN]
+                print( [(j+1+dkm)*dt,augN])
                 #pad aug ready for propagation one step forward
                 aug=repeat(expand_dims(aug,-1),l**2,-1)
                 aug=einsum('ij...->j...',aug*lamtens(eigl,dkm,dkm+1+j,dkm+2+j,ham,dt))
@@ -312,6 +312,7 @@ def quapi(mod,eigl,eta,dkm,ham,dt,initrho,ntot,filename):
             term=lamtens(eigl,dkm,dkm+1,dkm+1,ham,dt)
      
             for j in range(ntot-dkm):
+                ttt=time.time()
                 #first pad aug to the same size as term
                 augN=repeat(expand_dims(aug,-1),l**2,-1)
                 #multiply in the termination tensor
@@ -329,11 +330,13 @@ def quapi(mod,eigl,eta,dkm,ham,dt,initrho,ntot,filename):
                 #contract last 2 indices to give new augmnented density tensor ready to be 
                 #terminated in the next iteration of the for loop
                 aug=einsum('ij...->j...',aug*prop)
+                print(time.time()-ttt)
     
         else:
             #with the modified coeffs a different propagator is required at each step so these are constructed
             #with every iteration of the loop
             for j in range(ntot-dkm):
+                ttt=time.time()
                 #first pad aug to the same size as term
                 augN=repeat(expand_dims(aug,-1),l**2,-1)
                 #multiply in the termination tensor
@@ -344,21 +347,22 @@ def quapi(mod,eigl,eta,dkm,ham,dt,initrho,ntot,filename):
                 #print data to check its coming out
                 #extract pop difference and append to data
                 data.append([(j+1+dkm)*dt,augN])
-                print [(j+1+dkm)*dt,augN]
+                print( [(j+1+dkm)*dt,augN])
                 #pad aug ready for propagation one step forward
                 aug=repeat(expand_dims(aug,-1),l**2,-1)
                 #multiply in propagator
                 #contract last 2 indices to give new augmnented density tensor ready to be 
                 #terminated in the next iteration of the for loop
                 aug=einsum('ij...->j...',aug*lamtens(eigl,dkm,dkm+1+j,dkm+2+j,ham,dt))
+                print(time.time()-ttt)
         
-    print "Time for algorithm: "+str(time.time()-t1)
+    print( "Time for algorithm: "+str(time.time()-t1))
     #pickles data for later use but also returns it if you want to use itimmediately
-    datfilep=open(filename+str(dkm)+".pickle","w")
+    datfilep=open(filename+str(dkm)+".pickle","ab")
     pickle.dump(data,datfilep)
     datfilep.close()
     #deletes global variable ctab
-    print "Total running time: "+str(time.time()-t0)+"\n"
+    print( "Total running time: "+str(time.time()-t0)+"\n")
     del ctab
     
     return data
@@ -367,20 +371,20 @@ def quapi_corr(mod,eigl,eta,dkm,ham,dt,initrho,ntot,filename,n1,op):
     l=len(eigl)
     t0=time.time()
     rhovec=array(initrho).reshape(l**2)
-    print trot
+    print( trot)
     #full algorithm to find data at dkm+ntot points
     #mod turns on/off the modified coeffs, eigl is the list of eigenvalues of the system
     #operator, eta is the lineshape, dkm is delta_k_max, ham is the hamiltonian, dt is the timestep
     #initrho is the initial state density matrix, ntot is the number of points to propagator after the
     #initial dkm exact points, filename is the name of the file data is saved to
     #eventually coming out as "filename"+str(dkm)+".pickle"
-    print "deltakmax: "+str(dkm)
-    print " # of points: "+str(ntot)
+    print( "deltakmax: "+str(dkm))
+    print( " # of points: "+str(ntot))
     #globally defining ctab since it is called in a previous function but never defined previously
     global ctab
     ctab=mcoeffs(mod,eta,dkm,dt,ntot)
-    print ctab
-    print "Time for coeffs: "+ str(time.time()-t0)
+    print( ctab)
+    print( "Time for coeffs: "+ str(time.time()-t0))
     #first do the dkm points that are exact and initialize data to this
     t1=time.time()
     data=[]
@@ -433,19 +437,19 @@ def quapi_corr(mod,eigl,eta,dkm,ham,dt,initrho,ntot,filename,n1,op):
                 #print data to check its coming out
                 #extract pop difference and append to data
             data.append([(j+1+dkm)*dt,augN])
-            print [(j+1+dkm)*dt,augN]
+            print( [(j+1+dkm)*dt,augN])
                 #pad aug ready for propagation one step forward
             aug=repeat(expand_dims(aug,-1),l**2,-1)
             aug=einsum('ij...->j...',aug*lamtens(eigl,dkm,dkm+1+j,dkm+2+j,ham,dt))
     
         
-    print "Time for algorithm: "+str(time.time()-t1)
+    print( "Time for algorithm: "+str(time.time()-t1))
     #pickles data for later use but also returns it if you want to use itimmediately
     datfilep=open(filename+str(dkm)+".pickle","w")
     pickle.dump(data,datfilep)
     datfilep.close()
     #deletes global variable ctab
-    print "Total running time: "+str(time.time()-t0)+"\n"
+    print( "Total running time: "+str(time.time()-t0)+"\n")
     del ctab
     
     return data
