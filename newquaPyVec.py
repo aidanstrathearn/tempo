@@ -358,7 +358,7 @@ def quapi(mod,eigl,eta,dkm,ham,dt,initrho,ntot,filename):
         
     print( "Time for algorithm: "+str(time.time()-t1))
     #pickles data for later use but also returns it if you want to use itimmediately
-    datfilep=open(filename+str(dkm)+".pickle","ab")
+    datfilep=open(filename+str(dkm)+".pickle","wb")
     pickle.dump(data,datfilep)
     datfilep.close()
     #deletes global variable ctab
