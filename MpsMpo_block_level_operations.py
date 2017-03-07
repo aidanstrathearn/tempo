@@ -130,8 +130,8 @@ class mps_block():
  def append_site(self, tensor_to_append):
 
     try:
-       if len(tens_in.shape) != 3: raise err.MpsSiteInputError
-       if tensor_to_append.shape[1] != 1: raise err.MpsAppendingError
+       if len(tensor_to_append.shape) != 3: raise err.MpsSiteInputError
+       #if tensor_to_append.shape[1] != 1: raise err.MpsAppendingError
 
        #Append a new site
        self.data.append(mps_site(tens_in = tensor_to_append))
@@ -230,7 +230,7 @@ class mps_block():
  #on [R->L] sweep we reverse Oc to N - Oc + 1, so that all bonds have been through svd 
  #(in particular, the bond to the right of Oc, which is skipped if we reverse Oc to N - Oc instead)
  #If Oc=0 --> reverse to N - Oc instead, cause there's no bond (and no sites) to the right of Oc (so nothing to svd)
- def contract_with_mpo(self, mpo_block, orth_centre=None, prec=0.01, trunc_mode='accuracy'):          
+ def contract_with_mpo(self, mpo_block, orth_centre=None, prec=0.0001, trunc_mode='accuracy'):          
 
     #default val of orth_centre
     if orth_centre == None: orth_centre=int(np.ceil(0.5*self.N_sites))

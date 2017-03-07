@@ -1,5 +1,8 @@
 import newquaPyVec as qp
-import definitions as df
+import MpsMpo_site_level_operations as slo
+import MpsMpo_block_level_operations as blo
+from MpsMpo_block_level_operations import mps_block, mpo_block
+from MpsMpo_site_level_operations import mps_site, mpo_site
 import lineshapes as ln
 import numpy as np
 import pickle
@@ -21,8 +24,8 @@ def create_block(eigl,ham,dt,dkm,k,n):
     l=len(eigl)
 
     #initiate block - just a single site the rest are appended
-    blk=df.mpo_block(l**4,l**2,1)
-    blk.data[0]=df.mpo_site(input_tensor=qp.mpostartsite(eigl,dkm,k,n,ham,dt))
+    blk=mpo_block(l**4,l**2,1)
+    blk.data[0]=mpo_site(tens_in=qp.mpostartsite(eigl,dkm,k,n,ham,dt))
     
     #if k>dkm-1 then we are in bulk evolution no growth so standard quapi mpo sites are appended in order
     #until there there deltak_max sites
@@ -51,19 +54,19 @@ def growth(rho,eigl,eta,ham,dt,dkm,n,ntot,svals,pr):
         datlis.append([[dt*j,'no data']])
     
     #initialize mps block with 1 site
-    gmps=df.mps_block(l**2,l**2,1)
+    gmps=mps_block(l**2,l**2,1)
     #since we cant do the svd on a single site block this first step is just done with einsum  
-    gmps.data[0]=df.mps_site(input_tensor=np.einsum('i,jikl',rho,qp.gr_mpostartsite(eigl,dkm,1,n,ham,dt)))
+    gmps.data[0]=df.mps_site(tens_in=np.einsum('i,jikl',rho,qp.gr_mpostartsite(eigl,dkm,1,n,ham,dt)))
     #grow the block by 1 site with the delta function edge tensor
     
     gmps.append_site(qp.gr_mpoedge(eigl))
     #loop through multipling mpo into mps then growing the mps by one site
     for jj in range(0,dkm-2):
-        gmps.multiply_block(create_block(eigl,ham,dt,dkm,jj+2,n),svds[svals],pr)
+        gmps.contract_with_mpo(create_block(eigl,ham,dt,dkm,jj+2,n))
         gmps.append_site(qp.gr_mpoedge(eigl))
     
     #multiplies in first deltak_max site mpo giving augmented density tensor mps at the deltak_max step
-    gmps.multiply_block(create_block(eigl,ham,dt,dkm,dkm,n),svds[svals],pr)
+    gmps.contract_with_mpo(create_block(eigl,ham,dt,dkm,dkm,n))
     return gmps,datlis
     
 def growth_alg(mod,rho,eigl,eta,ham,dt,dkm,n,ntot,svals,pr):
@@ -73,10 +76,10 @@ def growth_alg(mod,rho,eigl,eta,ham,dt,dkm,n,ntot,svals,pr):
     #then growing the original mps (gmps) one more site and repeating
     datlis=[[0,rho]]
     qp.ctab=qp.mcoeffs(mod,eta,dkm,dt,ntot)
-    print qp.ctab
+    print( qp.ctab)
     l=len(eigl)
     svds=['fraction','accuracy','chi']
-    gmps=df.mps_block(l**2,l**2,2)
+    gmps=mps_block(l**2,l**2,2)
     
     gmps.data[0].m=np.einsum('i,jikl',rho,qp.gr_mpostartsite(eigl,dkm,1,1,ham,dt))
     gmps.data[1].m=qp.gr_mpoedge(eigl)
@@ -84,27 +87,26 @@ def growth_alg(mod,rho,eigl,eta,ham,dt,dkm,n,ntot,svals,pr):
     
     gmps.data[0].m=np.einsum('i,jikl',rho,qp.gr_mpostartsite(eigl,dkm,1,n,ham,dt))
     gmps.data[1].m=qp.gr_mpoedge(eigl)
-    ss,uu,vv=np.linalg.svd(np.einsum('ijk->ik',gmps.data[0].m), full_matrices=True)
-    print uu
-    print gmps.data[0].m.shape
+    
     for jj in range(0,dkm-2):
         mpsN=copy.deepcopy(gmps)
-        mpsN.multiply_block(create_block(eigl,ham,dt,dkm,jj+2,jj+2),svds[svals],pr)
+        mpsN.contract_with_mpo(create_block(eigl,ham,dt,dkm,jj+2,jj+2))
         datlis.append([(jj+2)*dt,mpsN.readout()])
         del mpsN
-        gmps.multiply_block(create_block(eigl,ham,dt,dkm,jj+2,n),svds[svals],pr)
+        gmps.contract_with_mpo(create_block(eigl,ham,dt,dkm,jj+2,n))
         gmps.append_site(qp.gr_mpoedge(eigl))
-        print "timestep: " +str(jj)
+        print( "timestep: " +str(jj))
     
     mpsN=copy.deepcopy(gmps)
-    mpsN.multiply_block(create_block(eigl,ham,dt,dkm,dkm,dkm),svds[svals],pr)
+    mpsN.contract_with_mpo(create_block(eigl,ham,dt,dkm,dkm,dkm))
     datlis.append([(dkm)*dt,mpsN.readout()])
     del mpsN
-    gmps.multiply_block(create_block(eigl,ham,dt,dkm,dkm,n),svds[svals],pr)
+    gmps.contract_with_mpo(create_block(eigl,ham,dt,dkm,dkm,n))
     return gmps,datlis
     
-def tempo(mod,eigl,eta,dkm,ham,dt,rho,ntot,filename,c,p):
+def tempo(mod,eigl,eta,dkm,ham,dt,irho,ntot,filename,c,p):
     t0=time.time()
+    rho=np.array(irho).reshape(len(eigl)**2)
     #algorithm to run tempo
     #c lables svd option in svds list and p is the precision option
     svds=['fraction','accuracy','chi']
@@ -119,28 +121,28 @@ def tempo(mod,eigl,eta,dkm,ham,dt,rho,ntot,filename,c,p):
         mpoterm=create_block(eigl,ham,dt,dkm,dkm+1,dkm+1)
         #loops through copying mps, terminating, reading out, then multiplying mps
         for jj in range(ntot-dkm):
-            print "timestep: " +str(jj+dkm+1)
+            print( "timestep: " +str(jj+dkm+1))
             mpsN=copy.deepcopy(mps)
-            mpsN.multiply_block(mpoterm,svds[c],p)
+            mpsN.contract_with_mpo(mpoterm)
             datlis.append([(dkm+jj+1)*dt,mpsN.readout()])
             del mpsN
-            mps.multiply_block(mpo,svds[c],p)
+            mps.contract_with_mpo(mpo)
     
     else:
         for jj in range(ntot-dkm):
-            print "timestep: " +str(jj+dkm+1)
+            print( "timestep: " +str(jj+dkm+1))
             mpsN=copy.deepcopy(mps)
-            mpsN.multiply_block(create_block(eigl,ham,dt,dkm,mod*jj+dkm+1,mod*jj+dkm+1),svds[c],p)
+            mpsN.contract_with_mpo(create_block(eigl,ham,dt,dkm,mod*jj+dkm+1,mod*jj+dkm+1))
             datlis.append([(dkm+jj+1)*dt,mpsN.readout()])
             del mpsN
-            mps.multiply_block(create_block(eigl,ham,dt,dkm,mod*jj+dkm+1,mod*jj+dkm+2),svds[c],p)
+            mps.contract_with_mpo(create_block(eigl,ham,dt,dkm,mod*jj+dkm+1,mod*jj+dkm+2))
     
     
     #returns list of data
-    print "Time for tempo algorithm: "+str(time.time()-t0)
-    print "method: " +str(c)+" precision: " +str(p)
+    print( "Time for tempo algorithm: "+str(time.time()-t0))
+    print( "method: " +str(c)+" precision: " +str(p))
     #pickles data for later use but also returns it if you want to use itimmediately
-    datfilep=open(filename+str(dkm)+".pickle","w")
+    datfilep=open(filename+str(dkm)+".pickle","wb")
     pickle.dump(datlis,datfilep)
     datfilep.close()
 
@@ -158,82 +160,36 @@ def eta2(t):
 hamil=[[0,1],[1,0]]
 eigs=[-1,1]
 delt=0.1
-nsteps=10
+nsteps=15
 hdim=len(eigs)
-irho=[1,0,0,0]
+irho=[[1,0],[0,0]]
 meth=0
 vals=1
-modc=0
+modc=1
 #defining local and operator dimensions
-df.local_dim=hdim**2
-dkmax=2
+
+dkmax=9
 qp.trot=0
 
-qp.ctab=qp.mcoeffs(modc,eta,dkmax,delt,10)
+qp.ctab=qp.mcoeffs(modc,eta,dkmax,delt,6)
 
-location="C:\\Users\\admin\\Desktop\\phd\\tempodata\\"
+location="TEMPO"
 
-
-tar=np.zeros((1,2,3,4,5,6,7,8))
-
-tar=np.rollaxis(tar,2,1)
-print tar.shape
-tar=np.rollaxis(tar,4,2)
-print tar.shape
-tar=np.rollaxis(tar,6,3)
-print tar.shape
-
-def block_contract(block):
-    dkk=block.N_sites
-    init=np.einsum('ijkl,mnlo',block.data[0].m,block.data[1].m)
-    for jj in range(2,dkk):
-        init=np.einsum('...i,jkil',init,block.data[jj].m)
-    init=np.sum(np.sum(init,-1),2)
-    return init
-
-def lam_matrix(mod,eigl,eta,dkm,k,n,ham,dt,ntot):
-    l=len(eigl)
-    qp.ctab=qp.mcoeffs(mod,eta,dkm,dt,ntot)
-    print qp.ctab
-    lmat=block_contract(create_block(eigl,ham,dt,dkm,k,n))
-    #print lmat
-    print 'break2'
-    for jj in range(dkm):
-        lmat=np.rollaxis(lmat,2*jj,jj)
-    #print lmat
-    lmat=np.reshape(lmat,(l**(2*dkm),l**(2*dkm)))
-    print 'breakkkk'   
-    return lmat.T
-
-
-#print lam_matrix(0,[-1,1],eta,2,4,5,hamil,delt,20)
-
-
-eis= la.eig(lam_matrix(0,[-1,1],eta,2,4,5,hamil,delt,20))
-vv=eis[0].real
-print vv
-#print ei.shape
-#print ev.T.shape
-#print ei
-#print ev[:,0]
-
-#print qp.arnoldi_ss(modc,eigs,eta,dkmax,hamil,delt)
-'''
 #get tempo data
 tempo(modc,eigs,eta,dkmax,hamil,delt,irho,nsteps,location+"test",meth,vals)
 #get quapi dat
 qp.quapi(modc,eigs,eta,dkmax,hamil,delt,irho,nsteps,location+"tempocheck")
 
-tdat=open(location+"test"+str(dkmax)+".pickle")
-mytdat=pickle.load(tdat)
+tdat=open(location+"test"+str(dkmax)+".pickle","rb")
+mytdat=pickle.load(tdat,encoding='bytes')
 tdat.close()
 dd=open(location+"test"+str(dkmax)+".dat","w")
 for k in range(0,len(mytdat)):
     dd.write(str(mytdat[k][0])+" "+str(2*(mytdat[k][1][1]).real)+" "+str(2*(mytdat[k][1][1]).imag)+" "+str((mytdat[k][1][0]-mytdat[k][1][3]).real)+"\n")
 dd.close()
 
-qdat=open(location+"tempocheck"+str(dkmax)+".pickle")
-myqdat=pickle.load(qdat)
+qdat=open(location+"tempocheck"+str(dkmax)+".pickle","rb")
+myqdat=pickle.load(qdat,encoding='bytes')
 qdat.close()
 dd=open(location+"tempocheck"+str(dkmax)+".dat","w")
 for k in range(0,len(myqdat)):
@@ -241,17 +197,17 @@ for k in range(0,len(myqdat)):
 dd.close()
 
 #comparing a datpoint- keeping all sv's reproduces quapi results
-print 'TEMPO data:'
-print mytdat[8][1]
-print 'QUAPI data:'
-print myqdat[8][1]
-print 'Trace of tempo data (bond truncuation seems to affect trace preservation and hermiticity):'
-print myqdat[8][1][0]+mytdat[8][1][3]
+print( 'TEMPO data:')
+print( mytdat[13][1])
+print( 'QUAPI data:')
+print( myqdat[13][1])
+print( 'Trace of tempo data (bond truncuation seems to affect trace preservation and hermiticity):')
+print( myqdat[13][1][0]+mytdat[13][1][3])
 
 #print np.einsum('ijkl->i',np.einsum('ijk,lkm',np.einsum('ijkl->ikl',np.einsum('ijk,lkn',mps_s2[0].m,mps_s2[1].m)),mps_s2[2].m))
-'''
 
-'''   
+
+'''
 #function to go through contracting the sites in a single block together using einsum
 #to produce the full lambda matrix
 
@@ -311,3 +267,47 @@ print vec
 #lam_mat=np.swapaxes(np.swapaxes(np.swapaxes(sum(sum(sum(sum(lam_mat,2),-1),2),0),2,3),0,3),1,2)
 #print lam_mat-qp.lamtens(eigs,3,4,5,hamil,delt)'''
 
+'''tar=np.zeros((1,2,3,4,5,6,7,8))
+
+tar=np.rollaxis(tar,2,1)
+print tar.shape
+tar=np.rollaxis(tar,4,2)
+print tar.shape
+tar=np.rollaxis(tar,6,3)
+print tar.shape
+
+def block_contract(block):
+    dkk=block.N_sites
+    init=np.einsum('ijkl,mnlo',block.data[0].m,block.data[1].m)
+    for jj in range(2,dkk):
+        init=np.einsum('...i,jkil',init,block.data[jj].m)
+    init=np.sum(np.sum(init,-1),2)
+    return init
+
+def lam_matrix(mod,eigl,eta,dkm,k,n,ham,dt,ntot):
+    l=len(eigl)
+    qp.ctab=qp.mcoeffs(mod,eta,dkm,dt,ntot)
+    print qp.ctab
+    lmat=block_contract(create_block(eigl,ham,dt,dkm,k,n))
+    #print lmat
+    print 'break2'
+    for jj in range(dkm):
+        lmat=np.rollaxis(lmat,2*jj,jj)
+    #print lmat
+    lmat=np.reshape(lmat,(l**(2*dkm),l**(2*dkm)))
+    print 'breakkkk'   
+    return lmat.T
+
+
+#print lam_matrix(0,[-1,1],eta,2,4,5,hamil,delt,20)
+
+
+eis= la.eig(lam_matrix(0,[-1,1],eta,2,4,5,hamil,delt,20))
+vv=eis[0].real
+print vv
+#print ei.shape
+#print ev.T.shape
+#print ei
+#print ev[:,0]
+
+#print qp.arnoldi_ss(modc,eigs,eta,dkmax,hamil,delt)'''
