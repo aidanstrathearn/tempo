@@ -1,4 +1,5 @@
 from cmath import exp
+from math import sqrt, ceil, floor
 from numpy import array,zeros,kron,reshape,swapaxes,expand_dims,repeat,einsum,eye,sum,dot
 import time
 from scipy.linalg import expm
@@ -6,6 +7,7 @@ import pickle
 import lineshapes as ln
 #import definitions as df
 from scipy.sparse.linalg import LinearOperator,eigs
+from scipy.interpolate import interp1d
 
 global trot
 
@@ -241,7 +243,7 @@ def quapi(mod,eigl,eta,dkm,ham,dt,initrho,ntot,filename):
     t0=time.time()
     rhovec=array(initrho).reshape(l**2)
     print(trot)
-    #full algorithm to find data at dkm+ntot points
+    #full algorithm to find data at ntot points
     #mod turns on/off the modified coeffs, eigl is the list of eigenvalues of the system
     #operator, eta is the lineshape, dkm is delta_k_max, ham is the hamiltonian, dt is the timestep
     #initrho is the initial state density matrix, ntot is the number of points to propagator after the
@@ -252,7 +254,6 @@ def quapi(mod,eigl,eta,dkm,ham,dt,initrho,ntot,filename):
     #globally defining ctab since it is called in a previous function but never defined previously
     global ctab
     ctab=mcoeffs(mod,eta,dkm,dt,ntot)
-    print( ctab)
     print( "Time for coeffs: "+ str(time.time()-t0))
     #first do the dkm points that are exact and initialize data to this
     t1=time.time()
@@ -330,7 +331,7 @@ def quapi(mod,eigl,eta,dkm,ham,dt,initrho,ntot,filename):
                 #contract last 2 indices to give new augmnented density tensor ready to be 
                 #terminated in the next iteration of the for loop
                 aug=einsum('ij...->j...',aug*prop)
-                print(time.time()-ttt)
+                #print(time.time()-ttt)
     
         else:
             #with the modified coeffs a different propagator is required at each step so these are constructed
@@ -371,7 +372,7 @@ def quapi_corr(mod,eigl,eta,dkm,ham,dt,initrho,ntot,filename,n1,op):
     l=len(eigl)
     t0=time.time()
     rhovec=array(initrho).reshape(l**2)
-    print( trot)
+    print(trot)
     #full algorithm to find data at dkm+ntot points
     #mod turns on/off the modified coeffs, eigl is the list of eigenvalues of the system
     #operator, eta is the lineshape, dkm is delta_k_max, ham is the hamiltonian, dt is the timestep
@@ -445,7 +446,7 @@ def quapi_corr(mod,eigl,eta,dkm,ham,dt,initrho,ntot,filename,n1,op):
         
     print( "Time for algorithm: "+str(time.time()-t1))
     #pickles data for later use but also returns it if you want to use itimmediately
-    datfilep=open(filename+str(dkm)+".pickle","w")
+    datfilep=open(filename+str(dkm)+".pickle","wb")
     pickle.dump(data,datfilep)
     datfilep.close()
     #deletes global variable ctab
@@ -562,6 +563,61 @@ def gr_mpoendsite(eigl,dk,dkm,k,n):
     return tab
 
 
+
+
+
+
+def auto_trot(eigl,eta,ham,initrho,t_tot,tol):
+    #function to find the size of timestep that eliminates the trotter error with tolerance tol
+    error=10
+    indelt=t_tot/20
+    
+
+    while (error > tol):
+        comp=[]
+        ntot=ceil(t_tot/indelt)
+        #get data for two difference timestep sizes with same overall cutoff time tau_c
+        dat1=quapi(0,eigl,eta,5,ham,indelt,initrho,floor(5.5/6.5*ntot),"trot")
+        dat2=quapi(0,eigl,eta,6,ham,indelt*5.5/6.5,initrho,ntot,"trot")
+        
+        
+        times=[]
+        for kk in range(len(dat2)):
+            times.append(dat2[kk][0])
+            
+            
+        rho=[]
+        for kk in range(len(dat2)):
+            rho.append(dat2[kk][1])
+            
+        rho=array(rho).T
+
+        inter=interp1d(times, rho, kind='cubic')
+        #get interpolation of data for smaller timestep
+
+        #table of the difference between the two sets of data evaluate - only one interpolation
+        #needed
+        
+        
+        for jj in range(1,len(dat1)):
+            comp.append(sqrt((dat1[jj][1][0]-dat1[jj][1][3]-inter(jj*indelt)[0]+inter(jj*indelt)[3])**2 \
+                             +(2*dat1[jj][1][1].real-2*inter(jj*indelt)[1].real)**2 \
+                             +(2*dat1[jj][1][1].real-2*inter(jj*indelt)[1].real)**2 ))
+        #
+        #
+        #find max error
+        error=max(comp)
+        
+        print("max error: "+str(error))
+        print("delt: " +str(indelt))
+        
+        #reduce timestep and try again
+        indelt=indelt*0.9
+        
+    return indelt
+
+        
+    
 #Timings per data point on my laptop
 #OLD QUAPI: 
 #kmax 1-7 all < 0.01 s
