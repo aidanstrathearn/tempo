@@ -242,19 +242,19 @@ def quapi(mod,eigl,eta,dkm,ham,dt,initrho,ntot,filename):
     l=len(eigl)
     t0=time.time()
     rhovec=array(initrho).reshape(l**2)
-    print(trot)
+    #print(trot)
     #full algorithm to find data at ntot points
     #mod turns on/off the modified coeffs, eigl is the list of eigenvalues of the system
     #operator, eta is the lineshape, dkm is delta_k_max, ham is the hamiltonian, dt is the timestep
     #initrho is the initial state density matrix, ntot is the number of points to propagator after the
     #initial dkm exact points, filename is the name of the file data is saved to
     #eventually coming out as "filename"+str(dkm)+".pickle"
-    print( "deltakmax: "+str(dkm))
-    print( " # of points: "+str(ntot))
+    #print( "deltakmax: "+str(dkm))
+    #print( " # of points: "+str(ntot))
     #globally defining ctab since it is called in a previous function but never defined previously
     global ctab
     ctab=mcoeffs(mod,eta,dkm,dt,ntot)
-    print( "Time for coeffs: "+ str(time.time()-t0))
+    #print( "Time for coeffs: "+ str(time.time()-t0))
     #first do the dkm points that are exact and initialize data to this
     t1=time.time()
     data=exact(eigl,dkm,ham,dt,rhovec)
@@ -348,22 +348,22 @@ def quapi(mod,eigl,eta,dkm,ham,dt,initrho,ntot,filename):
                 #print data to check its coming out
                 #extract pop difference and append to data
                 data.append([(j+1+dkm)*dt,augN])
-                print( [(j+1+dkm)*dt,augN])
+                #print( [(j+1+dkm)*dt,augN])
                 #pad aug ready for propagation one step forward
                 aug=repeat(expand_dims(aug,-1),l**2,-1)
                 #multiply in propagator
                 #contract last 2 indices to give new augmnented density tensor ready to be 
                 #terminated in the next iteration of the for loop
                 aug=einsum('ij...->j...',aug*lamtens(eigl,dkm,dkm+1+j,dkm+2+j,ham,dt))
-                print(time.time()-ttt)
+                #print(time.time()-ttt)
         
-    print( "Time for algorithm: "+str(time.time()-t1))
+    #print( "Time for algorithm: "+str(time.time()-t1))
     #pickles data for later use but also returns it if you want to use itimmediately
     datfilep=open(filename+str(dkm)+".pickle","wb")
     pickle.dump(data,datfilep)
     datfilep.close()
     #deletes global variable ctab
-    print( "Total running time: "+str(time.time()-t0)+"\n")
+    print("kmax="+str(dkm)+ ", points="+str(ntot)+", time="+str(time.time()-t0)+"s")
     del ctab
     
     return data
@@ -567,7 +567,7 @@ def gr_mpoendsite(eigl,dk,dkm,k,n):
 
 
 
-def auto_trot(eigl,eta,ham,initrho,t_tot,tol):
+def auto_trot(mod,eigl,eta,ham,initrho,t_tot,tol):
     #function to find the size of timestep that eliminates the trotter error with tolerance tol
     error=10
     indelt=t_tot/20
@@ -577,8 +577,8 @@ def auto_trot(eigl,eta,ham,initrho,t_tot,tol):
         comp=[]
         ntot=ceil(t_tot/indelt)
         #get data for two difference timestep sizes with same overall cutoff time tau_c
-        dat1=quapi(0,eigl,eta,5,ham,indelt,initrho,floor(5.5/6.5*ntot),"trot")
-        dat2=quapi(0,eigl,eta,6,ham,indelt*5.5/6.5,initrho,ntot,"trot")
+        dat1=quapi(mod,eigl,eta,5,ham,indelt,initrho,floor(5.5/6.5*ntot),"trot")
+        dat2=quapi(mod,eigl,eta,6,ham,indelt*5.5/6.5,initrho,ntot,"trot")
         
         
         times=[]
@@ -600,23 +600,51 @@ def auto_trot(eigl,eta,ham,initrho,t_tot,tol):
         
         
         for jj in range(1,len(dat1)):
-            comp.append(sqrt((dat1[jj][1][0]-dat1[jj][1][3]-inter(jj*indelt)[0]+inter(jj*indelt)[3])**2 \
+            comp.append(sqrt((dat1[jj][1][0].real-dat1[jj][1][3].real-inter(jj*indelt)[0].real+inter(jj*indelt)[3].real)**2 \
                              +(2*dat1[jj][1][1].real-2*inter(jj*indelt)[1].real)**2 \
-                             +(2*dat1[jj][1][1].real-2*inter(jj*indelt)[1].real)**2 ))
+                             +(2*dat1[jj][1][1].imag-2*inter(jj*indelt)[1].imag)**2 ))
         #
         #
         #find max error
         error=max(comp)
         
-        print("max error: "+str(error))
-        print("delt: " +str(indelt))
         
         #reduce timestep and try again
         indelt=indelt*0.9
-        
+    print("trotter convergencece with dt="+str(indelt))   
     return indelt
 
+def auto_quapi(mod,eigl,ham,initrho,t_tot,eta,tol,name):
+    deltat=auto_trot(mod,eigl,eta,ham,initrho,t_tot,tol)
+    error=10
+    dkm=5
+    while (error>tol) and (dkm<11):
+        comp=[]
+        ntot=ceil(t_tot/deltat)
+        #get data for two difference timestep sizes with same overall cutoff time tau_c
+        dat1=quapi(mod,eigl,eta,dkm,ham,deltat,initrho,ntot,name)
+        dat2=quapi(mod,eigl,eta,dkm+1,ham,deltat,initrho,ntot,name)
+
+        for jj in range(1,len(dat1)):
+            comp.append(sqrt((dat1[jj][1][0].real-dat1[jj][1][3].real-dat2[jj][1][0].real+dat2[jj][1][3].real)**2 \
+                             +(2*dat1[jj][1][1].real-2*dat2[jj][1][1].real)**2 \
+                             +(2*dat1[jj][1][1].imag-2*dat2[jj][1][1].imag)**2 ))
+        #
+        #
+        #find max error
+        error=max(comp)
         
+        
+        #reduce timestep and try again
+        dkm=dkm+1
+        
+    if (dkm>10):
+        print("no convergence with dkm=10")
+    else:
+        print("convergence acheived")
+    
+    return dat2
+    
     
 #Timings per data point on my laptop
 #OLD QUAPI: 
