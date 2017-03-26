@@ -150,12 +150,19 @@ def tempo(mod,eigl,eta,dkm,ham,dt,irho,ntot,filename,c,p):
     
 
 #defininf the lineshape used to find the makri coeffs
-def eta(t):
-    return ln.eta_0T(t,3,1,0.5*2)
+#def eta(t):
+    #return ln.eta_0T(t,3,1,0.5*2)
     
-def eta2(t):
-    return 10*t**2
-    
+#def eta2(t):
+    #return 10*t**2
+ 
+
+
+
+
+#############################################################################################################
+'''
+#####################3   
 #some test parameters
 hamil=[[0,1],[1,0]]
 eigs=[-1,1]
@@ -207,6 +214,7 @@ print( myqdat[13][1][0]+mytdat[13][1][3])
 #print np.einsum('ijkl->i',np.einsum('ijk,lkm',np.einsum('ijkl->ikl',np.einsum('ijk,lkn',mps_s2[0].m,mps_s2[1].m)),mps_s2[2].m))
 
 
+'''
 '''
 #function to go through contracting the sites in a single block together using einsum
 #to produce the full lambda matrix

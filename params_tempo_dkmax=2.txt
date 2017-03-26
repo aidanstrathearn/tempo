@@ -1,0 +1,6 @@
+0.1 #delt
+15  #nsteps
+0   #meth
+1   #vals
+1   #modc
+9   #dkmax
