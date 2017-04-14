@@ -226,14 +226,20 @@ class mps_block():
 
  ########## Modes: 'accuracy', 'chi', 'fraction' ################################
 
+ ##### Set is_endcap_present = False for Growth stage, is_endcap_present = True for post-Growth stage #####
+
  #Note the term "+ int(orth_centre != 0)" --> 
  #on [R->L] sweep we reverse Oc to N - Oc + 1, so that all bonds have been through svd 
  #(in particular, the bond to the right of Oc, which is skipped if we reverse Oc to N - Oc instead)
  #If Oc=0 --> reverse to N - Oc instead, cause there's no bond (and no sites) to the right of Oc (so nothing to svd)
- def contract_with_mpo(self, mpo_block, orth_centre=None, prec=0.0001, trunc_mode='accuracy'):          
+ def contract_with_mpo(self, mpo_block, orth_centre=None, prec=0.0001, trunc_mode='accuracy', is_endcap_present=False):          
 
     #default val of orth_centre
     if orth_centre == None: orth_centre=int(np.ceil(0.5*self.N_sites))
+
+    #if present, process the MpsEndCap first before starting Mps-Mpo contraction
+    if(is_endcap_present == True):
+       self.process_mps_mpo_endcap(mpo_block)
 
     #Initialize a boolean list (must re-init each time!) 
     #to keep track which mps sites have been multiplied by the corresponding mpo sites
@@ -241,10 +247,19 @@ class mps_block():
     for i in range(self.N_sites):
         self.is_multiplied.append(False)
 
+    #if we had to process the MpsEndCap, it means the last site of the Mps has already been multiplied by an Mpo
+    #thus set is_multiplied = True for the last Mps site
+    if(is_endcap_present == True):
+       self.is_multiplied[self.N_sites-1] = True
+
+    ########## sweep through mps-mpo network, contracting them site-by-site && doing SVD ##################
+
+    #Left-to-Right sweep (matters only if the orth centre is after site=0)
     if (orth_centre > 0):
         self.left_sweep_mps_mpo(mpo_block, orth_centre, prec, trunc_mode) 
 
-
+    #Right-to-Left sweep (matters only if the orth centre is before site=N-1)
+    #To perform the right sweep, we reverse mps-mpo network, perform the left sweep, then reverse back
     if (orth_centre < self.N_sites):
         self.reverse_mps_mpo_network(mpo_block) 
         self.left_sweep_mps_mpo(mpo_block, self.N_sites - orth_centre + int(orth_centre != 0), prec, trunc_mode)
@@ -269,9 +284,11 @@ class mps_block():
  def left_sweep_mps_mpo(self, mpo_block, orth_centre, prec, trunc_mode): 
 
     print('MULT at site ', 0)
-
-    self.data[0].update_site(tens_in = TensMul(mpo_block.data[0].m, self.data[0].m))
-    self.is_multiplied[0] = True
+ 
+    #Mult mps-mpo at 1st site (but only if it hasn't been multiplied already during process_mps_mpo_endcap)
+    if(self.is_multiplied[0] == False):
+       self.data[0].update_site(tens_in = TensMul(mpo_block.data[0].m, self.data[0].m))
+       self.is_multiplied[0] = True
 
     for site in range(1,orth_centre):
         
@@ -284,6 +301,23 @@ class mps_block():
             print('SVD (no mult) at site ', site)
             self.data[site-1].svd_mps_site(self.data[site], prec, trunc_mode)
 
+
+
+ def process_mps_mpo_endcap(self, mpo_block):
+
+    #Contract the last Mps site with the last "cap" site of Mpo, then remove the local dim
+    MpsEndCap_tmp = TensMul(mpo_block.data[self.N_sites-1].m, self.data[self.N_sites-1].m)
+    MpsEndCap = MpsEndCap_tmp[0,:,:]
+
+    #Contract mps-mpo at site=N_sites-2 
+    tmpMpsMpo = TensMul(mpo_block.data[self.N_sites-2].m, self.data[self.N_sites-2].m)
+    #Absorb MpsEndCap into mps-mpo product at N_sites-2
+    tmpMpsMpo = np.einsum('imn,nk->imk', tmpMpsMpo, MpsEndCap)
+
+    #Write tmpMpsMpo to the last site of Mps
+    self.data[self.N_sites-2].update_site(tens_in = tmpMpsMpo)
+    #Cut the number of Mps sites after we've absorbed the MpsEndCap
+    self.N_sites = self.N_sites-1
 
 
 
