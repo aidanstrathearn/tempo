@@ -159,7 +159,7 @@ def set_trunc_params(prec, trunc_mode, sigma_dim):
 
 #Decide whether to use Lapack or Arnoldi
 def lapack_preferred(dimT, Edim, chi):
-  return (chi > 0.11*sigma_dim(dimT)) or (Edim == 1)
+  return  True #(chi > 0.11*sigma_dim(dimT)) or (Edim == 1)
       
   
 
@@ -172,11 +172,11 @@ def sigma_dim(dimT):
 #Compute SVD using Lapack
 def compute_lapack_svd(theta, chi, eps):
 
-  print('Starting Lapack SVD')
+  #print('Starting Lapack SVD')
 
   #Create a copy to prevent an accidental modification of theta
   ThetaTmp = cp.deepcopy(theta)
-
+  #print(ThetaTmp)
   #Compute Lapack SVD
   U, Sigma, VH = np.linalg.svd(ThetaTmp, full_matrices=True)
 
@@ -192,7 +192,7 @@ def compute_lapack_svd(theta, chi, eps):
 #Compute SVD using Arnoldi
 def compute_arnoldi_svd(theta, chi, eps):
 
-  print('Starting Arnoldi SVD')
+  #print('Starting Arnoldi SVD')
 
   #Create a copy to prevent an accidental modification of theta
   ThetaTmp = cp.deepcopy(theta)
@@ -205,7 +205,7 @@ def compute_arnoldi_svd(theta, chi, eps):
       chi=int(np.ceil(0.11*sigma_dim(dimT)))
 
   #Compute Arnoldi SVD
-  U, Sigma, VH = svds(ThetaTmp, k=chi, ncv=np.minimum(3*chi+1,dimT[1]), tol=10**(-5), which='LM', v0=None, maxiter=10*chi, return_singular_vectors=True)
+  U, Sigma, VH = svds(ThetaTmp, k=chi, ncv=np.minimum(3*chi+1,dimT[1]), tol=10**(-5), which='LM', v0=None, maxiter=100*chi, return_singular_vectors=True)
 
   #Have we achieved target accuracy? (such that truncErr < eps)
   accuracy_OK = truncErr_below_eps(Sigma, eps)
@@ -214,11 +214,11 @@ def compute_arnoldi_svd(theta, chi, eps):
       #if not, repeat SVD with incremented chi
       dChi = 2
       chi = chi + dChi 
-      print('Arnoldi SVD: target accuracy not achieved with chi = ', chi - dChi, ', increasing chi to ', chi)
+      #print('Arnoldi SVD: target accuracy not achieved with chi = ', chi - dChi, ', increasing chi to ', chi)
 
   else: 
       #if yes, proceed to the truncation of svd matrices
-      print('Arnoldi SVD: target accuracy achieved with chi = ', chi)
+      #print('Arnoldi SVD: target accuracy achieved with chi = ', chi)
       U, chi = truncate_svd_matrices(U, Sigma, chi, eps)
 
   return U, U.conj().T, chi, accuracy_OK
@@ -248,10 +248,10 @@ def truncate_svd_matrices(U, Sigma, chi, eps):
         elif (i == sdimTmp): 
             chi = sdimTmp
  
-  print('Truncating SVD results to chi = ', chi, ' out of ', sdimTmp)
+  #print('Truncating SVD results to chi = ', chi, ' out of ', sdimTmp)
 
-  for i in range(min(chi + 5, sdimTmp)):
-      print('Sigma: ', Sigma[i]/np.sum(Sigma[0:chi]), 'at i', i)
+  #for i in range(min(chi + 5, sdimTmp)):
+   #   print('Sigma: ', Sigma[i]/np.sum(Sigma[0:chi]), 'at i', i)
 
   #return truncated U matrix
   return U[:, 0:chi], chi

@@ -144,8 +144,48 @@ class mps_block():
     except err.MpsAppendingError as e:
        print("append_site: ", e.msg)
        sys.exit()
+       
+ def insert_site(self, axis, tensor_to_append):
 
+    try:
+       if len(tensor_to_append.shape) != 3: raise err.MpsSiteInputError
+       #if tensor_to_append.shape[1] != 1: raise err.MpsAppendingError
 
+       #Append a new site
+       self.data.insert(axis,mps_site(tens_in = tensor_to_append))
+       self.N_sites = self.N_sites + 1 
+
+    except err.MpsSiteInputError as e:
+       print("append_site: ", e.msg)
+       sys.exit()
+
+    except err.MpsAppendingError as e:
+       print("append_site: ", e.msg)
+       sys.exit()
+
+ def contract_end(self):
+    ns=self.N_sites
+
+    tens=np.einsum('ijk->j',self.data[ns-1].m)
+    del self.data[ns-1]
+
+    self.N_sites=self.N_sites-1
+    tens=np.einsum('i,jki',tens,self.data[ns-2].m)  
+    tens=np.expand_dims(tens,-1)            
+    self.data[ns-2].update_site(tens_in=tens)
+
+    
+ def readout(self):
+
+    ns=self.N_sites
+    rh=np.einsum('ijk->ik',self.data[0].m)
+
+    for jj in range(1,ns-1):
+       rh=np.einsum('ij,jk',rh,np.einsum('ijk->jk',self.data[jj].m))   
+
+    rh=np.einsum('ij,j',rh,np.einsum('ijk->j',self.data[ns-1].m))
+    return rh
+           
 
  def copy_mps(self, mps_copy, copy_conj=False): 
 
@@ -268,34 +308,24 @@ class mps_block():
 
  def left_sweep_mps_mpo(self, mpo_block, orth_centre, prec, trunc_mode): 
 
-    print('MULT at site ', 0)
+    #print('MULT at site ', 0)
 
     self.data[0].update_site(tens_in = TensMul(mpo_block.data[0].m, self.data[0].m))
     self.is_multiplied[0] = True
 
     for site in range(1,orth_centre):
         
-        print('MULT & SVD at site ', site)
+        #print('MULT & SVD at site ', site)
 
         if not self.is_multiplied[site]:
             self.data[site-1].zip_mps_mpo_sites(self.data[site], mpo_block.data[site], prec, trunc_mode)
             self.is_multiplied[site] = True
         else:
-            print('SVD (no mult) at site ', site)
+            #print('SVD (no mult) at site ', site)
             self.data[site-1].svd_mps_site(self.data[site], prec, trunc_mode)
 
 
 
 
- def readout(self):
-
-    ns=self.N_sites
-    rh=np.einsum('ijk->ik',self.data[0].m)
-
-    for jj in range(1,ns-1):
-       rh=np.einsum('ij,jk',rh,np.einsum('ijk->jk',self.data[jj].m))   
-
-    rh=np.einsum('ij,j',rh,np.einsum('ijk->j',self.data[ns-1].m))
-    return rh
-
+ 
 
