@@ -27,7 +27,7 @@ for kk in pp:
             shfile.write('#$ -cwd'+'\n')
             shfile.write('#$ -pe smp 1'+'\n')
             shfile.write('#$ -j y'+'\n')
-            shfile.write('export LD_LIBRARY_PATH=/share/apps/sage/local/lib'+'\n')
+            shfile.write('export LD_LIBRARY_PATH=~/anaconda3/lib'+'\n')
             shfile.write('~/anaconda3/bin/python ../tempo.py -i '+'in_'+name +".txt"+ ' -o ' +'out_'+name +".pickle")
             shfile.close()
 
