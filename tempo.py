@@ -40,6 +40,12 @@ vals= int(vals)
 #Check if params were loaded correctly
 print("Params loaded from in_file: ", delt, nsteps, meth, vals, coup, dkmax)
 
+#to go to larger spin
+#hamil=[[0,1,0],[1,0,1],[0,1,0]]
+#eigs=[-1,0,1]
+#irho=[[1,0,0],[0,0,0],[0,0,0]]
+#
+
 hamil=[[0,1],[1,0]]
 eigs=[-1,1]
 hdim=len(eigs)

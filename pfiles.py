@@ -1,10 +1,18 @@
+#timestep
 delt=0.2/7
+#total number of steps to propagate to
 ntot=1000
+#method - always fixed  precision meth=1
 meth=1
+
+#precision = 10**(-0.1*pp)
 pp=[60,65]
 
+#overall coupling=0.5*0.01*cvals = 0.5*raw_coupling, where raw_coupling = 0.01*cvals
 coup=0.5*0.01
+#typical range (90 - 120) corresponding to coupling (0.9 -1.2) = 0.01*cvals = raw_coupling
 cvals=[120]
+
 dkmax=[80]
 
 for kk in pp:
@@ -27,7 +35,7 @@ for kk in pp:
             shfile.write('#$ -cwd'+'\n')
             shfile.write('#$ -pe smp 1'+'\n')
             shfile.write('#$ -j y'+'\n')
-            shfile.write('export LD_LIBRARY_PATH=~/anaconda3/lib'+'\n')
+            shfile.write('export LD_LIBRARY_PATH=/share/apps/sage/local/lib'+'\n')
             shfile.write('~/anaconda3/bin/python ../tempo.py -i '+'in_'+name +".txt"+ ' -o ' +'out_'+name +".pickle")
             shfile.close()
 
