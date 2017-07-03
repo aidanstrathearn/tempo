@@ -171,7 +171,7 @@ def tempoalg(mod,eigl,dkm,eta,ham,dt,irho,ntot,c,p,filename):
         #mpsN=copy.deepcopy(mps)
         #mpsN.contract_with_mpo(term_mpo,prec=p,trunc_mode=svds[c])
         #mpsN.insert_site(0,edgetens(eigl))
-        daa.append([kk*dt,read(mps,term_mpo)])
+        #daa.append([kk*dt,read(mps,term_mpo)])
         pickle.dump([kk*dt,read(mps,term_mpo)],datfile)
         
         if fmod(kk,dkm+1)==0:
@@ -188,6 +188,7 @@ def tempoalg(mod,eigl,dkm,eta,ham,dt,irho,ntot,c,p,filename):
     del mps
 
     print(time.time()-t0)
+    print("FINISHED")
     return daa
 '''
 ep=0

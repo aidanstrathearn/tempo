@@ -1,19 +1,19 @@
 #timestep
 delt=0.2/7
 #total number of steps to propagate to
-ntot=1000
+ntot=60
 #method - always fixed  precision meth=1
 meth=1
 
 #precision = 10**(-0.1*pp)
-pp=[60,65]
+pp=[85]
 
 #overall coupling=0.5*0.01*cvals = 0.5*raw_coupling, where raw_coupling = 0.01*cvals
 coup=0.5*0.01
 #typical range (90 - 120) corresponding to coupling (0.9 -1.2) = 0.01*cvals = raw_coupling
-cvals=[120]
+cvals=[99]
 
-dkmax=[80]
+dkmax=[40]
 
 for kk in pp:
     for ll in dkmax:
