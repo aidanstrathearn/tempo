@@ -160,8 +160,11 @@ class mps_site(object):
     self.update_site(tens_in = reshape_matrix_into_tens3d(U, [self.SNdim, self.Wdim, chi]))
 
     #Contract: Udag*theta*(mpsB)
-    tmpMps = np.einsum('km,imn->ikn', theta, other.m)
-    tmpMps = np.einsum('km,imn->ikn', Udag, tmpMps)
+    
+    #tmpMps = np.einsum('km,imn->ikn', theta, other.m)
+    tmpMps = np.swapaxes(np.dot(theta,other.m),0,1)
+    #tmpMps = np.einsum('km,imn->ikn', Udag, tmpMps)
+    tmpMps = np.swapaxes(np.dot(Udag,tmpMps),0,1)
     other.update_site(tens_in = tmpMps)
 
 
@@ -190,8 +193,13 @@ class mps_site(object):
 
     #Contract: Udag*theta*(mpoB--mpsB)
     tmpMpsMpo = TensMul(other_mpo.m, other.m)
-    tmpMpsMpo = np.einsum('km,imn->ikn', theta, tmpMpsMpo)
-    tmpMpsMpo = np.einsum('km,imn->ikn', Udag, tmpMpsMpo)
+    
+    #tmpMpsMpo = np.einsum('km,imn->ikn', theta, tmpMpsMpo)
+    tmpMpsMpo = np.swapaxes(np.dot(theta, tmpMpsMpo),0,1)
+    
+    #tmpMpsMpo = np.einsum('km,imn->ikn', Udag, tmpMpsMpo)
+    tmpMpsMpo = np.swapaxes(np.dot(Udag, tmpMpsMpo),0,1)
+    
     other.update_site(tens_in = tmpMpsMpo)
 
 
