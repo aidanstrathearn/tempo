@@ -83,6 +83,41 @@ def reshape_tens3d_into_matrix(tensIn, dimOut):
 
   return matOut
 
+def reshape_tens4d_into_matrix(tensIn,dimOut):
+
+  #dims of tensIn
+  dimIn = np.asarray(tensIn.shape)
+  
+  #Initialize matrixOut to zeros
+  matOut1=np.zeros((dimIn[0]*dimIn[1], dimIn[2], dimIn[3]), dtype=complex)
+  matOut2=np.zeros((dimIn[0]*dimIn[1]*dimIn[2], dimIn[3]), dtype=complex)
+  
+  for i in range(dimIn[0]):
+         matOut1[i*dimIn[1] : (i+1)*dimIn[1] ,:, :] = tensIn[i,:,:,:]
+  
+  for i in range(dimIn[0]*dimIn[1]):
+         matOut2[i*dimIn[2] : (i+1)*dimIn[2] , :] = matOut1[i,:,:]
+  
+  return matOut2
+
+def reshape_matrix_into_tens4d(matIn, dimOut):
+
+
+  if matIn.shape[1]!=dimOut[3] or (dimOut[0]*dimOut[1]*dimOut[2])!=matIn.shape[0]:
+      print("mat to tens error")
+      return 0
+  #Initialize matrixOut to zeros
+  TensOut1=np.zeros((dimOut[0]*dimOut[1], dimOut[2], dimOut[3]), dtype=complex)
+  TensOut2=np.zeros((dimOut[0], dimOut[1], dimOut[2], dimOut[3]), dtype=complex)
+  
+  for i in range(dimOut[0]*dimOut[1]):
+          TensOut1[i,:,:] = matIn[i*dimOut[2] : (i+1)*dimOut[2] , :]
+         
+  for i in range(dimOut[0]):
+         TensOut2[i,:,:,:] = TensOut1[i*dimOut[1] : (i+1)*dimOut[1] ,:, :]
+  
+  return TensOut2
+
 
 
 
