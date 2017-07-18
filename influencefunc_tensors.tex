@@ -1,0 +1,203 @@
+\documentclass[a4paper, aps, pra,twocolumn]{revtex4-1}
+
+\usepackage[english]{babel}
+%\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{mathtools}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{braket}
+\usepackage[colorinlistoftodos]{todonotes}
+
+\newcommand{\as}[1]{{\color{green}{#1}}}
+\newcommand{\bl}[1]{{\color{red}{#1}}}
+\newcommand{\pk}[1]{{\color{blue}{#1}}}
+
+\newcommand{\dket}[1]{\left.\Ket{#1}\right\rangle}
+\newcommand{\dbra}[1]{\left\langle\Bra{#1}\right.}
+\newcommand{\dbraket}[1]{\left\langle\Braket{#1}\right\rangle}
+\newcommand{\rSA}{\rho_R^A}
+
+\let\Re\relax \DeclareMathOperator\Re{\mathrm{Re}}%
+\let\Im\relax \DeclareMathOperator\Im{\mathrm{Im}}%
+\DeclareMathOperator\Tr{\mathrm{Tr}}%
+\DeclareMathOperator\sinc{\mathrm{sinc}}%
+
+
+\begin{document}
+\title{Tensor Network Representation of Influence Functional}
+
+\author{A.~Strathearn}
+
+\date{\today}
+
+\begin{abstract}
+
+
+\end{abstract}
+
+\maketitle
+
+
+
+\section{Discretized Path Integral}
+\label{sec:scheme}
+
+The generic Hamiltonian of such models is
+\begin{align}
+\label{eq:hamil}
+ H=&H_0+ \hat{s}\sum_\alpha \hat{B}_\alpha + \sum_\alpha \omega_\alpha a^\dagger_\alpha a_\alpha \\
+=&H_0+H_B,
+ \end{align}
+where $H_0$ is the free system Hamiltonian and $H_B$ contains both the free bath Hamiltonian and the system-bath interaction. Here,  $a_\alpha^\dagger$ ($a_\alpha$) and $\omega_\alpha$ are the creation (annihilation) operators and frequencies of the $\alpha$th oscillator. The system operator $\hat{s}$ couples to the bath operators $\hat{B}_\alpha=g_\alpha a_\alpha+g_\alpha^* a_\alpha^\dagger$ with coupling constants $g_\alpha$.
+
+To simplify our notation we work in the Liouvillian representation such that operators in Hilbert space are represented by vectors in Liouville space. To parameterise the $D$ dimensional Hilbert space of the system we use the $D$ eigenstates of $\hat{s}$. Operators in this space are vectorized in the following way
+\begin{align}
+\hat{\rho}_R&=\sum_{s^+, s^-}\rho_{s^+ s^-}\ket{s^+}\bra{s^-} \nonumber\\
+&\equiv\sum_{S} \rho_S\dket{S}\equiv\dket{\rho_R},
+\end{align}
+where the sum over $S$ runs over the $D^2$ pairs of $\{s^+,s^-\}$ and $\hat{s}\ket{s^+}=s^+\ket{s^+}$ and likewise for $s^-$. We use the notation $\dket{x}$ to mean a vector in Liouville space.
+The bath Hilbert space can also be represented in a similar way, though we do not need to define its basis explicitly in what follows.
+The evolution of the reduced system, assuming factorizing initial conditions is now represented as:
+\begin{align}
+\label{redrho}
+\dket{\rho_R(t)}=\Tr_B\left[\text{e}^{\mathcal{L} t}\dket{\rho_R(0)}\dket{\rho_B}\right],
+\end{align}
+with the Liouvillian $\mathcal{L}=\mathcal{L}_0+\mathcal{L}_B$, where $\mathcal{L}_0$ and $\mathcal{L}_B$ generate coherent evolution caused by $H_0$ and $H_B$ respectively.
+In addition to factorising initial conditions we also assume the initial state of the bath is that of thermal equilibrium when no system is present $\rho_B=\exp(-\sum_\alpha \omega_\alpha a^\dagger_\alpha a_\alpha/T)/\mathcal{Z}$, with  temperature $T$ and partition function $\mathcal{Z}$.
+
+
+The first approximation made to make  Eq.~\eqref{redrho} computable is to factorize the long time propagator into $N$ short time propagators $\text{e}^{\mathcal{L} t}=(\text{e}^{\mathcal{L} \Delta t})^N$ and then to employ a Trotter splitting between the system and bath parts~\cite{trotter1959}
+\begin{align}
+\label{trot}
+\text{e}^{\mathcal{L} \Delta t}\approx \text{e}^{\mathcal{L}_B \Delta t}\text{e}^{\mathcal{L}_0 \Delta t},
+\end{align}
+on each of these. The error introduced in this process is $\mathcal{O}(\Delta t^2)$.
+We note that the argument that now follows can be easily adapted to use a symmetrized Trotter splitting~\cite{suzuki1976,makri_makarov_1995_i,makri_makarov_1995_ii} that improves the error to $\mathcal{O}(\Delta t^3)$. All the numerical results we present do include this symmetrized splitting, but for simplicity of notation we will use the definition in Eq.~\ref{trot} here.
+
+Tracing out the bath degrees of freedom then results in a reduced density matrix at time $t_N=N\Delta t$, whose elements are 
+\begin{multline}
+\label{discreteevo}
+\dbraket{S_N|\rho_R(t_N)}=\sum_{S_1 \ldots S_{N-1}}\left(\prod_{j=1}^N \prod_{j'=1}^j I_{j-j'}(S_j,S_{j'})\right)\\
+\times \dbraket{S_1 |\rho_R(\Delta t)} .
+\end{multline}
+where
+\begin{equation}
+I_{j-j'}(S,S') = \begin{dcases*}
+e^{- \phi_{j-j'}(S,S')} &\text{ $j-j'\ne 1$}\\ 
+\dbra{S}e^{\mathcal{L}_0 \Delta t}\dket{S'}e^{- \phi_{j-j'}(S,S')} &\text{ $j-j'=1$}
+\end{dcases*},
+\end{equation}
+with
+\begin{equation}
+ \phi_{j-j'}(S,S')=(s^+-s^-)({s'}^+\eta_{j-j'}-{s'}^-\eta_{j-j'}^*).
+\end{equation}
+and 
+\begin{equation}
+\dbra{S}e^{\mathcal{L}_0 \Delta t}\dket{S'}= \bra{s^+}\text{e}^{-iH_0 \Delta t}\ket{{s'}^+}\bra{{s'}^-}\text{e}^{iH_0 \Delta t}\ket{s^-}
+\end{equation}
+
+
+The coefficients $\eta_{k-k'}$ quantify the non-Markovian `interaction' between the reduced system at different times $t_k$ and $t_{k'}$ and are defined as
+\begin{equation}
+\eta_{k-k'} = \begin{dcases*}
+\int_{t_{k-1}}^{t_k}\int_{t_{k'-1}}^{t_{k'}}C(t'-t'')dt''dt' &\text{ $k\ne k'$}\\ 
+\int_{t_{k-1}}^{t_k}\int_{t_{k-1}}^{t'}C(t'-t'')dt''dt' &\text{ $k=k'$}
+\end{dcases*},
+\end{equation}
+in terms of the bath autocorrelation function 
+\begin{align}\label{bathcorr}
+C(t)&=\sum_\alpha \braket{\hat{B}_\alpha(t+s)\hat{B}_\alpha(s)}\\
+&=\int_0^\infty d\omega J(\omega)(\coth( \omega/2 T)\cos(\omega t)-i \sin(\omega t)),
+\end{align}
+where $J(\omega)=\sum_\alpha |g_\alpha|^2 \delta(\omega_\alpha-\omega)$ is the spectral density of the bath.
+Note in the 1st order trotter splitting we use here the bath lags the system by a timestep $\Delta t$ so the system has been propagated freely for this amount of time in EQ.
+
+\section{Tensor Network}
+We interpret the summand of the discretized path integral equation \eqref{iffac} as the components of a rank-n tensor
+\begin{equation} \label{inftens}
+ T_{S_N, S_{N-1} \ldots S_1}=\left(\prod_{j=1}^N \prod_{j'=1}^j I_{j-j'}(S_j,S_{j'})\right)\\
+\times \dbraket{S_1 |\rho_R(\Delta t)},
+\end{equation}
+of which there are $D^N$, where $D=d^2$ is the dimension of the Lioville space and $d$ that of the underlying Hilbert space.
+We will show that $T_{S_N, S_{N-1} \ldots S_1}$ can be written as a tensor network consisting of $N(N+1)/2$ tensors with rank-4 at most and that a TEBD-type method can be used to contract this network, with storage requirements now $O(N D^2 d_b^2$ where $d_b$ is the chosen bond dimension.
+
+First, gather up terms in inner piece of double product in \eqref{iffac} into a single object, which we write as components of a rank-j tensor $\mathbf{\Lambda}_j$
+\begin{align}\label{lamdef}
+ (\mathbf{\Lambda}_j)_{S_j, S_{j-1} \ldots S_{1}}&= \prod_{j'=1}^{j} I_{j-j'}(S_j,S_{j'}) \\
+ &= \prod_{\Delta k=0}^{j-1} I_{\Delta k}(S_j,S_{j-\Delta k}).
+\end{align}
+In the remaining product over the $\mathbf{\Lambda_j}$ any pair of adjacent terms in the product can be written in terms of a sum.  Using the einstein summation convention that a repeated index appearing once as a superscript and once as a subscript are summed over, the $j$-th pair of terms in product $\prod_{j=1}^{N}(\mathbf{\Lambda}_j)_{S_j, S_{j-1} \ldots S_{1}}$ can be written as
+\begin{multline}
+ (\mathbf{\Lambda}_j)_{S_{j}, S_{j-1}, \ldots S_{1}} (\mathbf{\Lambda}_{j-1})_{ S_{j-1} \ldots S_{1}} = \\
+  (\tilde{\mathbf{\Lambda}}_j)_{ S_j, S_{j-1}, \ldots S_{1}}^{S'_{j-1} \ldots S'_{1}} (\mathbf{\Lambda}_{j-1})_{ S'_{j-1} \ldots S'_{1}}
+\end{multline}
+where we have defined the new rank-$(2j-1)$ tensor $\tilde{\mathbf{\Lambda}}_j$ with components
+\begin{multline}
+  (\tilde{\mathbf{\Lambda}}_j)_{S_j, S_{j-1}, \ldots S_{1}}^{ S'_{j-1} \ldots S'_{1}}=\left(\prod_{j'=1}^{j-1} \delta_{S_{j'}}^{S'_{j'}}\right) (\mathbf{\Lambda}_j)_{ S_j, S_{j-1}, \ldots S_{1}}\\
+  = I_0(S_{j},S_{j}) \prod_{\Delta k=1}^{j-1} \delta_{S_{j-\Delta k}}^{S'_{j-\Delta k}} I_{\Delta k}(S_{j},S_{j-\Delta k})
+\end{multline}
+and the deltas satisfy
+\begin{equation}
+R_{... b ...}= \delta^a_b R_{... a ...}.
+\end{equation}
+
+Going through $\prod_{j=1}^{N}(\mathbf{\Lambda}_j)_{S_j, S_{j-1} \ldots S_{1}}$ replacing each $\mathbf{\Lambda}_j$ with a $\tilde{\mathbf{\Lambda}}_j$ thus allows us to write it as a tensor network with structure in FIG. 
+
+Note that for each $\tilde{\mathbf{\Lambda}}_j$ we can combine all the upper indices and lower indices each into a single index to give a rank-2 tensor, or rectangular matrix, such that contractions between consecutive $\tilde{\mathbf{\Lambda}}_j$ can be written simply as matrix multiplication. The only $\tilde{\mathbf{\Lambda}}_j$ that doesn't have both an upper and lower index is the rank-1 $\tilde{\mathbf{\Lambda}}_1$, which combined with the initial state gives the components of the  rank-1 vector which the first rectangular matrix, $\tilde{\mathbf{\Lambda}}_2$, acts upon
+\begin{equation}
+ (\tilde{\mathbf{\Lambda}}_1)_{S_1}(\dket{\rho_R(\Delta t)})_{S_1}=I_0(S_1,S_1)\dbraket{S_1 |\rho_R(\Delta t)}.
+\end{equation}
+We can thus define the square matrix
+\begin{equation}
+ (\tilde{\mathbf{\Lambda'}}_1)_{S_1}^S=\delta_{S_1}^S (\tilde{\mathbf{\Lambda}}_1)_{S_1}
+\end{equation}
+such that
+\begin{equation}
+ (\tilde{\mathbf{\Lambda'}}_1)_{S_1}^S(\dket{\rho_R(\Delta t)})_{S}=(\tilde{\mathbf{\Lambda}}_1)_{S_1}(\dket{\rho_R(\Delta t)})_{S_1}.
+\end{equation}
+With this, the tensor whose components are given by EQ can be written in the coordinate independent form
+\begin{equation}
+\dket{\rho_A(t=N\Delta t)}= \tilde{\mathbf{\Lambda}}_N \tilde{\mathbf{\Lambda}}_{N-1} \ldots \tilde{\mathbf{\Lambda}}_{2}\tilde{\mathbf{\Lambda'}}_{1}\dket{\rho_R(\Delta t)}.
+\end{equation}
+We can consider $\tilde{\mathbf{\Lambda}}_{k}$ a superoperator which acts to the right on an operator space which looks like $k-1$ copies of the Hilbert space of our physical reduced system, $\mathcal{H}_1 \otimes \mathcal{H}_2 \otimes \ldots \mathcal{H}_{k-1} $, and produces a vectorized operator in a space of $k$ copies. Thus we call $\dket{\rho_A(t=N\Delta t)} \in \mathcal{H}_1 \otimes \mathcal{H}_2 \otimes \ldots \mathcal{H}_{N}$ the augmented density tensor with
+\begin{equation}
+\dket{\rho_A(t=N\Delta t)}= \sum_{S_1...S_N} T_{S_N, S_{N-1} \ldots S_1 }\dket{S_1}\otimes \dket{S_2} \otimes \ldots \dket{S_N}.
+\end{equation}
+The analogy with with a density matrix is because it looks like the density matrix for a chain of interacting copies of the physical reduced system and because it is Hermitian and has trace equal to one.
+Our aim is to take this analogy to a 1D chain of interacting systems seriously and apply known methods to find an MPS of the augmented density tensor.
+To do this we first must find an MPO representation of the superoperators $\tilde{\mathbf{\Lambda}}_{k}$.
+
+In the same way that we ``tensorised'' the product of $(\mathbf{\Lambda}_k)_{S_k S_{k-1} \ldots S_1}$ by inserting $\delta$'s and summations into the product, each term in product defining $\tilde{\mathbf{\Lambda}}_{k}$, EQ, can similarly be cast into the form of tensor components.
+Defining the rank-4 tensor $\mathbf{I}_{\Delta k}$ with components
+\begin{align}\label{rank4}
+(\mathbf{I}_{\Delta k})_{\alpha S}^{\alpha' S'}= \delta_{\alpha}^{\alpha'}\delta_{S}^{S'} I_{\Delta k}(\alpha,S)
+\end{align}
+it is straightforward to verify that the components of $\tilde{\mathbf{\Lambda}}_{k}$ can be written as, continuing to use the convention that an index appearing once as an upper and once as lower is summed over,
+\begin{multline}
+(\tilde{\mathbf{\Lambda}}_j)_{ S_j, S_{j-1}, \ldots S_{1}}^{S'_{j-1} \ldots S'_{1}}= \\ \delta_{S'_j}^{\alpha_j}\left(\prod_{\Delta k=0}^{j-1} (\mathbf{I}_{\Delta k})_{\alpha_{j-\Delta k} S_{j-\Delta k}}^{\alpha_{j-\Delta k-1} S'_{j-\Delta k} }\right) (\mathbf{1})_{\alpha_0},
+\end{multline}
+where $(\mathbf{1})_{\alpha_0}$ is the rank-1 tensor whose components are all equal to 1 and is included, along with the $\delta$, ensure the correct rank of $\tilde{\mathbf{\Lambda}}_j$. Their action is only on two of the terms in the product,
+\begin{multline}
+\delta^{\alpha_j}_{S'_j}(\mathbf{I}_{0})_{\alpha_j S_j}^{\alpha_{j-1} S'_{j}}=(\mathbf{I}_{0})_{\alpha_j S_j}^{\alpha_{j-1} \alpha_{j}} =\delta_{S_j}^{\alpha_{j-1}}I_{0}(S_j,S_j).
+\end{multline}
+and
+\begin{align}
+(\mathbf{I}_{j-1})_{\alpha_1 S_1}^{\alpha_0 S'_j}(\mathbf{1})_{\alpha_0}=\sum_{\alpha_0}(\mathbf{I}_{j-1})_{\alpha_1 S_1}^{\alpha_0 S'_1}= \delta_{S_1}^{S'_1}I_{j-1}(\alpha_1,S_1).
+\end{align}
+This decomposition into rank-4 tensors is shown in FIG.
+
+We can alternatively write the decomposition into rank-4 tensors as a more conventional looking product of square matrices by defining the vectors $\dbra{I_0(S)}$, $\dket{\mathbf{1}}$ and matrices $\tilde{\mathbf{I}}_{\Delta k}(S,S')$ (the $S$'s here are considered labels rather tensor indices) with components
+\begin{align}
+ \dbraket{I_0(S)|\alpha}&=\delta_{S}^{\alpha}I_{0}(S,S)\\
+ \dbraket{\alpha|\mathbf{1}}&= (\mathbf{1})_\alpha\\
+ \dbraket{\alpha|\tilde{\mathbf{I}}_{\Delta k}(S,S')|\alpha'} &= \delta_{\alpha}^{\alpha'}\delta_{S}^{S'} I_{\Delta k}(\alpha,S)
+\end{align}
+such that
+\begin{multline}
+(\tilde{\mathbf{\Lambda}}_j)_{ S_j, S_{j-1}, \ldots S_{1}}^{S'_{j-1} \ldots S'_{1}}= \\
+\dbra{I_0(S_j)}\tilde{\mathbf{I}}_{1}(S_{j-1},S'_{j-1}) \ldots \tilde{\mathbf{I}}_{j}(S_1,S'_1)\dket{\mathbf{1}}.
+\end{multline}
+Thus we have successfully found an MPO representation of $\tilde{\mathbf{\Lambda}}_j$.
+
+\end{document}
