@@ -32,7 +32,7 @@ def _force_forder(x):
     else:
         return (x, False)
         
-def dot(A,B):
+def fastdot(A,B):
     """
     Uses blas libraries directly to perform dot product
     """
