@@ -58,8 +58,8 @@ class mpo_block(object):
         MpoSiteT=np.transpose(self.data[site].m, (0,1,3,2))
         self.data[site].update_site(tens_in = MpoSiteT)
 
- def contract_with_mpo(self, mpo_block, orth_centre=None, prec=0.0001, trunc_mode='accuracy'):          
-
+ def contract_with_mpo(self, mpo_block, orth_centre=None, prec=1, trunc_mode='fraction'):          
+    print('no') 
     #default val of orth_centre
     if orth_centre == None: orth_centre=int(np.ceil(0.5*self.N_sites))
 
@@ -70,14 +70,19 @@ class mpo_block(object):
         self.is_multiplied.append(False)
 
     if (orth_centre > 0):
-        self.left_sweep_mps_mpo(mpo_block, orth_centre, prec, trunc_mode) 
+        self.left_sweep_mpo_mpo(mpo_block, orth_centre, prec, trunc_mode) 
 
 
     if (orth_centre < self.N_sites):
-        self.reverse_mps_mpo_network(mpo_block) 
-        self.left_sweep_mps_mpo(mpo_block, self.N_sites - orth_centre + int(orth_centre != 0), prec, trunc_mode)
-        self.reverse_mps_mpo_network(mpo_block)
+        self.reverse_mpo_mpo_network(mpo_block) 
+        self.left_sweep_mpo_mpo(mpo_block, self.N_sites - orth_centre + int(orth_centre != 0), prec, trunc_mode)
+        self.reverse_mpo_mpo_network(mpo_block)
 
+ def reverse_mpo_mpo_network(self, mpo_block): 
+
+        self.reverse_mpo() 
+        mpo_block.reverse_mpo() 
+        self.is_multiplied.reverse()    
     #Canonicalize MPS 
     #(if Oc=N --> do backward sweep with Oc=0; if Oc=0 --> do backward sweep with Oc=N; else --> do both sweeps)
     #if (orth_centre > 0): self.canonicalize_mps(0, prec, trunc_mode)
@@ -86,20 +91,22 @@ class mpo_block(object):
  def left_sweep_mpo_mpo(self, mpo_block, orth_centre, prec, trunc_mode): 
 
     #print('MULT at site ', 0)
-
+    #print('tnsm')
+    #print(TensMul(mpo_block.data[0].m, self.data[0].m).shape)
     self.data[0].update_site(tens_in = TensMul(mpo_block.data[0].m, self.data[0].m))
     self.is_multiplied[0] = True
-
+    print('shouldnt see this')
     for site in range(1,orth_centre):
         
-        #print('MULT & SVD at site ', site)
+        
+        print('MULT & SVD at site ', site)
 
         if not self.is_multiplied[site]:
             self.data[site-1].zip_mpo_mpo_sites(self.data[site], mpo_block.data[site], prec, trunc_mode)
             self.is_multiplied[site] = True
         else:
-            #print('SVD (no mult) at site ', site)
-            self.data[site-1].svd_mps_site(self.data[site], prec, trunc_mode)
+            print('SVD (no mult) at site ', site)
+            self.data[site-1].svd_mpo_site(self.data[site], prec, trunc_mode)
 
 ##########################################################################
 #   Class mps_block   

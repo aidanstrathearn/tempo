@@ -190,6 +190,7 @@ def tempoalg(mod,eigl,dkm,eta,ham,dt,irho,ntot,c,p,filename):
     print(time.time()-t0)
     print("FINISHED")
     return daa
+
 '''
 ep=0
 hamil=[[ep,1],[1,-ep]]
@@ -200,15 +201,33 @@ irho=[[1,0],[0,0]]
 meth=1
 vals=1
 modc=0
+dkmax=4
+delt=0.2/7
 #defining local and operator dimensions
+'''
+arr=np.array([[[0,1,2],[3,4,5]],[[6,7,8],[9,10,11]],[[12,13,14],[15,16,17]]])
+print(arr.shape)
+arr1=arr.reshape(6,3)
+print(arr1)
 
-
+arr1=arr1.reshape(3,2,3)
+print(arr-arr1)
+'''
 qp.trot=0
 nt=200
 
 def eta(t):
     return ln.eta_0T_s1(t,10,0.5*1.2)
 
+qp.ctab=qp.mcoeffs(modc,eta,dkmax,delt,nt) 
+block=tempo_mpoblock(eigs,hamil,delt,dkmax,dkmax+1,nt)
+block.contract_with_mpo(tempo_mpoblock(eigs,hamil,delt,dkmax,dkmax+1,nt))
+for j in range(dkmax):
+    print(block.data[j].m.shape)
+block.contract_with_mpo(tempo_mpoblock(eigs,hamil,delt,dkmax,dkmax+1,nt))
+for j in range(dkmax):
+    print(block.data[j].m.shape)
+#tempo_mpoblock(eigs,hamil,delt,dkmax,dkmax+1,nt).contract_with_mpo(tempo_mpoblock(eigs,hamil,delt,dkmax,dkmax+1,nt))
 
 dlist=[]
 for kk in range(11,12):

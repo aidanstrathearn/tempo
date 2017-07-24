@@ -7,12 +7,14 @@ from scipy.sparse.linalg import svds
 import ErrorHandling as err
 
 
-__all__ = ["TensMul", "reshape_matrix_into_tens3d", "reshape_tens3d_into_matrix", "compute_lapack_svd", "compute_arnoldi_svd", "truncate_svd_matrices", "set_trunc_params", "lapack_preferred", "sigma_dim"]
+__all__ = ["TensMul","reshape_matrix_into_tens4d", "reshape_matrix_into_tens3d","reshape_tens4d_into_matrix", "reshape_tens3d_into_matrix", "compute_lapack_svd", "compute_arnoldi_svd", "truncate_svd_matrices", "set_trunc_params", "lapack_preferred", "sigma_dim"]
 
 
 
 def TensMul(tensA_in, tensB_in):
-
+  #print('tensmul')
+  #print(tensA_in.shape)
+  #print(tensB_in.shape)
   #Prepare tensA, tensB --> both should be 4D arrays (should create copies to prevent unwanted modification)
   tensA = cp.deepcopy(tensA_in); tensB = cp.deepcopy(tensB_in)
   if (tensA.ndim==3): tensA = tensA[np.newaxis, ...]       
@@ -36,6 +38,7 @@ def TensMul(tensA_in, tensB_in):
   elif (tensO.shape[0] == 1): tensO = tensO[0,:,:,:] 
   elif (tensO.shape[1] == 1): tensO = tensO[:,0,:,:] 
   
+  #print(tensO.shape)
   return tensO
 
 
@@ -87,7 +90,7 @@ def reshape_tens4d_into_matrix(tensIn,dimOut):
 
   #dims of tensIn
   dimIn = np.asarray(tensIn.shape)
-  
+  #print(dimIn)
   #Initialize matrixOut to zeros
   matOut1=np.zeros((dimIn[0]*dimIn[1], dimIn[2], dimIn[3]), dtype=complex)
   matOut2=np.zeros((dimIn[0]*dimIn[1]*dimIn[2], dimIn[3]), dtype=complex)
@@ -115,7 +118,7 @@ def reshape_matrix_into_tens4d(matIn, dimOut):
          
   for i in range(dimOut[0]):
          TensOut2[i,:,:,:] = TensOut1[i*dimOut[1] : (i+1)*dimOut[1] ,:, :]
-  
+  #print(TensOut2.shape)
   return TensOut2
 
 
@@ -222,7 +225,17 @@ def compute_lapack_svd(theta, chi, eps):
 
   return U, U.conj().T, chi, accuracy_OK
 
-
+'''
+arr=np.array([[[0,1,2],[3,4,5]],[[6,7,8],[9,10,11]],[[12,13,14],[15,16,17]]])
+print(arr.shape)
+arr1=arr.reshape(6,3)
+u, sig, vt=np.linalg.svd(arr1, full_matrices=False)
+print(u.shape)
+print(np.dot(u.T.conj(),u))
+print(vt.shape)
+print(np.diag(sig).shape)
+'''
+#print(arr1-np.dot(u,np.dot(sig,vt)))
 
 #Compute SVD using Arnoldi
 def compute_arnoldi_svd(theta, chi, eps):
