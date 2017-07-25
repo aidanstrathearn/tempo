@@ -9,9 +9,74 @@ import ErrorHandling as err
 
 __all__ = ["TensMul","reshape_matrix_into_tens4d", "reshape_matrix_into_tens3d","reshape_tens4d_into_matrix", "reshape_tens3d_into_matrix", "compute_lapack_svd", "compute_arnoldi_svd", "truncate_svd_matrices", "set_trunc_params", "lapack_preferred", "sigma_dim"]
 
-
-
 def TensMul(tensA_in, tensB_in):
+  #print('tensmul')
+  #print(tensA_in.shape)
+  #print(tensB_in.shape)
+  #Prepare tensA, tensB --> both should be 4D arrays (should create copies to prevent unwanted modification)
+  tensA = cp.deepcopy(tensA_in); tensB = cp.deepcopy(tensB_in)
+  if (tensA.ndim==3): tensA = tensA[np.newaxis, ...]       
+  if (tensB.ndim==3): tensB = tensB[:, np.newaxis, ...] 
+  
+  tensO=np.dot(np.swapaxes(tensA,1,3),np.swapaxes(tensB,0,2))
+  del tensA, tensB
+  rs=tensO.shape
+  tensO=np.reshape(np.swapaxes(tensO,1,4),(rs[0],rs[4],rs[2]*rs[3],rs[1]*rs[5]))
+  #print(np.count_nonzero(rank6-tensO))
+  if (tensO.shape[0] == 1) and (tensO.shape[1] == 1): tensO = tensO[0,0,:,:]                                                      
+  elif (tensO.shape[0] == 1): tensO = tensO[0,:,:,:] 
+  elif (tensO.shape[1] == 1): tensO = tensO[:,0,:,:] 
+  #print(tensO.shape)
+  return tensO
+
+def TensMul2(tensA_in, tensB_in):
+
+  #print('tensmul')
+  #print(tensA_in.shape)
+  #print(tensB_in.shape)
+  #Prepare tensA, tensB --> both should be 4D arrays (should create copies to prevent unwanted modification)
+  tensA = cp.deepcopy(tensA_in); tensB = cp.deepcopy(tensB_in)
+  if (tensA.ndim==3): tensA = tensA[np.newaxis, ...]       
+  if (tensB.ndim==3): tensB = tensB[:, np.newaxis, ...] 
+  #print(tensA.shape)
+  #print(tensB.shape)
+  #Find dims of tensA, tensB 
+  dimA = np.asarray(tensA.shape); dimB = np.asarray(tensB.shape)
+
+  #Initialize tensO
+  #tensO=np.zeros((dimA[0], dimB[1], dimA[2]*dimB[2], dimA[3]*dimB[3]), dtype=complex)
+  
+  #print(np.swapaxes(tensA,1,3).shape)
+  #print(np.swapaxes(tensB,0,3).shape)
+  tensA=np.reshape(np.swapaxes(tensA,1,3),(-1,dimA[1]))
+  tensB=np.swapaxes(np.reshape(np.swapaxes(tensB,0,3),(-1,dimB[0])),0,1)
+  
+  rank6=np.reshape(np.dot(tensA,tensB),(dimA[0],dimA[3],dimA[2],dimB[3],dimB[2],dimB[1]))
+  #print(rank6.shape)
+  #print('good dot')
+  #Compute product of tensA, tensB
+  '''
+  for ia in range(dimA[2]):
+     for ib in range(dimB[2]):
+        for ja in range(dimA[3]):
+           for jb in range(dimB[3]):
+               tensO[:, :, ib + ia*dimB[2], jb + ja*dimB[3]] = rank6[:,ja,ia,jb,ib,:]
+  '''             
+  rank6=np.swapaxes(np.swapaxes(np.swapaxes(rank6,1,5),3,4),4,5)
+  rs=rank6.shape
+  tensO=np.reshape(rank6,(rs[0],rs[1],rs[2]*rs[3],rs[4]*rs[5]))
+  #print(np.count_nonzero(rank6-tensO))
+  
+  
+  if (tensO.shape[0] == 1) and (tensO.shape[1] == 1): tensO = tensO[0,0,:,:]                                                      
+  elif (tensO.shape[0] == 1): tensO = tensO[0,:,:,:] 
+  elif (tensO.shape[1] == 1): tensO = tensO[:,0,:,:] 
+  
+  #print(tensO.shape)
+  return tensO
+
+
+def TensMul3(tensA_in, tensB_in):
   #print('tensmul')
   #print(tensA_in.shape)
   #print(tensB_in.shape)
@@ -43,6 +108,8 @@ def TensMul(tensA_in, tensB_in):
 
 
 
+
+
 ##### reshape matrix into tensor-3d with dims = dimOut ####
 def reshape_matrix_into_tens3d(matIn, dimOut):
 
@@ -50,18 +117,18 @@ def reshape_matrix_into_tens3d(matIn, dimOut):
   tensOut=np.zeros((dimOut[0], dimOut[1], dimOut[2]), dtype=complex)
 
   if (matIn.shape[1] == dimOut[2]):
-
-     for i in range(dimOut[0]):
-         tensOut[i,:,:] = matIn[i*dimOut[1] : (i+1)*dimOut[1] , :]
+     #for i in range(dimOut[0]):
+     #    tensOut[i,:,:] = matIn[i*dimOut[1] : (i+1)*dimOut[1] , :]
+     matIn=np.reshape(matIn,(dimOut[0], dimOut[1], dimOut[2]))
+     #print(np.count_nonzero(tensOut-matIn))
 
   elif (matIn.shape[0] == dimOut[1]):
 
-     for i in range(dimOut[0]):
-         tensOut[i,:,:] = matIn[: , i*dimOut[2] : (i+1)*dimOut[2]]
-
-  return tensOut
-
-
+     #for i in range(dimOut[0]):
+     #    tensOut[i,:,:] = matIn[: , i*dimOut[2] : (i+1)*dimOut[2]]
+     matIn=np.swapaxes(np.reshape(matIn.T,(dimOut[0], dimOut[2], dimOut[1])),1,2)
+     #print(np.count_nonzero(tensOut-matIn))
+  return matIn
 
 
 
