@@ -1,7 +1,11 @@
 from scipy.special import gamma
 from cmath import sin, atan, log
 from mpmath import zeta,polygamma,harmonic,euler
+from mpmath import gamma as cgamma
 from numpy import array,zeros
+
+def lgam(x):
+    return log(cgamma(x))
 
 #lineshape for spectral density: A*w^s*e^(-w/wc) at temperature T
 # zetas have poles at s=1,2 so need separate function for these cases
@@ -26,6 +30,22 @@ def eta_0T_s1(t,wc,A):
 #lineshape for super ohmic with spatial correlations: J=A*w^3*e^(-w/wc)*(1-sinc(w/mu))
 def eta_sp_s3(t,T,wc,mu,A):
     return 0.5*A*T**2*(-2*wc**3*(-2j*t*mu**4+mu**2*wc+wc**3)*T**(-2)*(mu**2+wc**2)**(-2)-1j*mu*T**(-1)*(euler-harmonic(T*(-1j*mu**(-1)*(1+t*mu)+wc**(-1)))+polygamma(0,1+T*(-1j*t+1j*mu**(-1)+wc**(-1)))+2*polygamma(0,(mu-1j*wc)*T*(mu*wc)**(-1))-2*polygamma(0,(mu+1j*wc)*T*(mu*wc)**(-1))-polygamma(0,T*(mu*wc)**(-1)*(mu+1j*(-1+t*mu)*wc))+polygamma(0,T*(mu*wc)**(-1)*(mu+1j*(1+t*mu)*wc)))+4*polygamma(1,T*wc**(-1))-2*polygamma(1,T*wc**(-1)*(1+wc*T**(-1)-1j*t*wc))-2*polygamma(1,T*wc**(-1)*(1+1j*t*wc)))
+
+#lineshape for ohmic with spatial correlations: J=A*w*e^(-w/wc)*(1-cos(w/mu))
+def eta_sp_s1(t,T,wc,mu,A):
+    return 0.5*A*(2*log(T/wc)+4*lgam(T/wc)
+                 -lgam((T/wc)-1j*(T/mu))
+                 -lgam((T/wc)+1-1j*(T/mu))
+                 -lgam((T/wc)+1j*(T/mu))
+                 -lgam((T/wc)+1+1j*(T/mu))
+                 +lgam((T/wc)-1j*T*(-t+1/mu))
+                 +lgam((T/wc)-1j*T*(-t-1/mu))
+                 +lgam((T/wc)+1j*T*(-t+1/mu)+1)
+                 +lgam((T/wc)-1j*T*(t+1/mu)+1)
+                 -2*lgam((T/wc)-1j*T*t+1)
+                 -2*lgam((T/wc)+1j*T*t)
+                 )
+                 
 
 #combines all of above for the general lineshape - still buggy though for some params
 def eta_all(t,T,s,wc,mu,A):
