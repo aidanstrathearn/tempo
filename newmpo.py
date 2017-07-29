@@ -146,15 +146,17 @@ def tempoalg(mod,eigl,dkm,eta,ham,dt,irho,ntot,c,p,filename):
     datfile=open(filename,"wb")
     pickle.dump(daa,datfile)
     
+    
     prop_mpo, term_mpo = tempo_mpoblock(eigl,ham,dt,dkm,dkm+1,ntot), tempo_mpoblock(eigl,ham,dt,dkm,dkm+1,dkm+1)
     
     t0=time.time()
-    #for jj in range(term_mpo.N_sites):
-    #    term_mpo.data[jj].m=np.einsum('ijkl->jkl',term_mpo.data[jj].m)
-    
     
     for kk in range(dkm+1,ntot+1):
         ttt=time.time()
+        if mod==1:
+            prop_mpo, term_mpo = tempo_mpoblock(eigl,ham,dt,dkm,kk,ntot), tempo_mpoblock(eigl,ham,dt,dkm,kk,kk)
+            print('mpo build time: ',time.time()-ttt)
+        
         mps.contract_end()
         size=0
         for ss in range(mps.N_sites):
@@ -163,66 +165,55 @@ def tempoalg(mod,eigl,dkm,eta,ham,dt,irho,ntot,c,p,filename):
         bond=[]
         for ss in range(mps.N_sites):
            bond.append(mps.data[ss].m.shape[2])
-        
-        
+            
         print("\n bond dims: "+str(bond))
         print("total size: "+str(size))
         print("prec: "+str(p))
-        #mpsN=copy.deepcopy(mps)
-        #mpsN.contract_with_mpo(term_mpo,prec=p,trunc_mode=svds[c])
-        #mpsN.insert_site(0,edgetens(eigl))
-        #daa.append([kk*dt,read(mps,term_mpo)])
+
+        daa.append([kk*dt,read(mps,term_mpo)])
         pickle.dump([kk*dt,read(mps,term_mpo)],datfile)
         
-        if fmod(kk,dkm+1)==0:
-            mpsfile=open("mps_"+filename,"wb")
-            pickle.dump(mps,mpsfile)
-            mpsfile.close()
+        #if fmod(kk,dkm+1)==0:
+        #    mpsfile=open("mps_"+filename,"wb")
+        #    pickle.dump(mps,mpsfile)
+        #    mpsfile.close()
         mps.contract_with_mpo(prop_mpo,prec=p,trunc_mode=svds[c])
         mps.insert_site(0,edgetens(eigl))
-        #daa.append([kk*dt,mps.readout()])
+
         print("point: "+str(kk)+" time: "+str(time.time()-ttt))
         print("length: "+str(dkm))
         
-    datfile.close()
+    #datfile.close()
     del mps
 
     print(time.time()-t0)
     print("FINISHED")
     return daa
 
-'''
+
 ep=0
-hamil=[[ep,1],[1,-ep]]
+hamil=[[0,1],[1,0]] #v=0.5 for 3d spatial
 eigs=[1,-1]
 nsteps=15
 hdim=len(eigs)
 irho=[[1,0],[0,0]]
 meth=1
 vals=1
-modc=0
+modc=1
 dkmax=4
 delt=0.2/7
 #defining local and operator dimensions
-'''
 
-'''
-arr=np.array([[[0,1,2],[3,4,5]],[[6,7,8],[9,10,11]],[[12,13,14],[15,16,17]]])
-print(arr.shape)
-arr1=arr.reshape(6,3)
-print(arr1)
 
-arr1=arr1.reshape(3,2,3)
-print(arr-arr1)
-'''
-
-'''
 qp.trot=0
 nt=200
 
 def eta(t):
-    return ln.eta_0T_s1(t,10,0.5*1.2)
+    #return ln.eta_sp_s3(t,5,4,0.5,0.5*0.1) timestep=1/15 prec=70
+    return ln.eta_sp_s1(t,0.2,7.5,1/4,0.5*0.1)
+    #return ln.eta_g(t,0.2,1.000001,7.5,0.5*0.1)
 
+'''
 qp.ctab=qp.mcoeffs(modc,eta,dkmax,delt,nt) 
 block=tempo_mpoblock(eigs,hamil,delt,dkmax,dkmax+1,nt)
 block.contract_with_mpo(tempo_mpoblock(eigs,hamil,delt,dkmax,dkmax+1,nt))
@@ -232,23 +223,35 @@ block.contract_with_mpo(tempo_mpoblock(eigs,hamil,delt,dkmax,dkmax+1,nt))
 for j in range(dkmax):
     print(block.data[j].m.shape)
 #tempo_mpoblock(eigs,hamil,delt,dkmax,dkmax+1,nt).contract_with_mpo(tempo_mpoblock(eigs,hamil,delt,dkmax,dkmax+1,nt))
+'''
 
 dlist=[]
-for kk in range(11,12):
-    for jj in range(6,7):
-        dkmax=5*kk
-        delt=2/(7*10)
-        qp.ctab=qp.mcoeffs(modc,eta,dkmax,delt,nt) 
-        dlist.append(tempoalg(modc,eigs,dkmax,eta,hamil,delt,irho,nt,meth,10**(-jj)))
+for jj in [10,20,30,40]:
+    for kk in [60]:
+        dkmax=kk
+        delt=0.125
+        qp.ctab=qp.mcoeffs(modc,eta,dkmax,delt,nt)
+        daa=tempoalg(modc,eigs,dkmax,eta,hamil,delt,irho,nt,meth,10**(-0.1*jj),'mod1dspatial_coup5_dkm'+str(dkmax)+'_prec'+str(jj)+'.pickle')
+        dlist.append(daa)
+
+#svd error for delt=3.5/30 kmax=30
+
 
 
 #daa2=qp.quapi(modc,eigs,eta,dkmax,hamil,delt,irho,nt,"_dk")
 
+
+
 #for jj in range(len(daa)):
- #   print(daa[jj][1]-daa2[jj][1])
+#    print(daa[jj][1]-daa2[jj][1])
     
+#print(daa)
 
+#plt.plot(daa2.T[0],daa2.T[1])
+#plt.show()
+#print(daa2[0])
 
+'''
 x1=[]
 x2=[]
 x3=[]
@@ -260,25 +263,26 @@ y2=[]
 y3=[]
 y4=[]
 for xi in range(nt):
-    x1.append((dlist[0][xi][1][0]-dlist[0][xi][1][3]).real)
-    x2.append((dlist[1][xi][1][0]-dlist[1][xi][1][3]).real)
+    x1.append((daa2[xi][1][0]-daa2[xi][1][3]).real)
+    #x2.append((dlist[1][xi][1][0]-dlist[1][xi][1][3]).real)
     #x3.append((dlist[2][xi][1][0]-dlist[2][xi][1][3]).real)
+    #x4.append((dlist[3][xi][1][0]-dlist[3][xi][1][3]).real)
     #x4.append(dlist[3][xi][1][0].real)
     #x5.append(dlist[4][xi][1][0].real)
     #x6.append(dlist[5][xi][1][0].real)
-    y1.append(dlist[0][xi][0])
-    y2.append(dlist[1][xi][0])
+    y1.append(daa2[xi][0])
+    #y2.append(dlist[1][xi][0])
     #y3.append(dlist[2][xi][0])
     #y4.append(dlist[3][xi][0])
     
 
 plt.plot(y1,x1)
-plt.plot(y2,x2)
+#plt.plot(y2,x2)
 #plt.plot(y3,x3)
 #plt.plot(y4,x4)
 #plt.plot(y,x5)
 #plt.plot(y,x6)
-plt.ylim([0,1])
+plt.ylim([-1,1])
 plt.show()
 '''
 
