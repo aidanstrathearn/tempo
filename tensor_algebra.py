@@ -3,8 +3,11 @@ import math
 import sys
 import copy as cp
 import numpy as np
+import scipy as sp
 from scipy.sparse.linalg import svds
 import ErrorHandling as err
+from numba import jit
+from numpy import linalg
 
 
 __all__ = ["TensMul","reshape_matrix_into_tens4d", "reshape_matrix_into_tens3d","reshape_tens4d_into_matrix", "reshape_tens3d_into_matrix", "compute_lapack_svd", "compute_arnoldi_svd", "truncate_svd_matrices", "set_trunc_params", "lapack_preferred", "sigma_dim"]
@@ -14,12 +17,15 @@ def TensMul(tensA_in, tensB_in):
   #print(tensA_in.shape)
   #print(tensB_in.shape)
   #Prepare tensA, tensB --> both should be 4D arrays (should create copies to prevent unwanted modification)
-  tensA = cp.deepcopy(tensA_in); tensB = cp.deepcopy(tensB_in)
-  if (tensA.ndim==3): tensA = tensA[np.newaxis, ...]       
-  if (tensB.ndim==3): tensB = tensB[:, np.newaxis, ...] 
+  #tensA = tensA_in.copy; tensB = tensB_in.copy
+  #tensA = cp.deepcopy(tensA_in); tensB = cp.deepcopy(tensB_in)
+  if (tensA_in.ndim==3): tensA = tensA_in[np.newaxis, ...] 
+  else: tensA=tensA_in      
+  if (tensB_in.ndim==3): tensB = tensB_in[:, np.newaxis, ...] 
+  else: tensB=tensB_in
   
   tensO=np.dot(np.swapaxes(tensA,1,3),np.swapaxes(tensB,0,2))
-  del tensA, tensB
+  #del tensA, tensB
   rs=tensO.shape
   tensO=np.reshape(np.swapaxes(tensO,1,4),(rs[0],rs[4],rs[2]*rs[3],rs[1]*rs[5]))
   #print(np.count_nonzero(rank6-tensO))
@@ -278,12 +284,16 @@ def sigma_dim(dimT):
 def compute_lapack_svd(theta, chi, eps):
 
   #print('Starting Lapack SVD')
-
+  #print('theta')
+  #print(theta)
   #Create a copy to prevent an accidental modification of theta
   ThetaTmp = cp.deepcopy(theta)
   #print(ThetaTmp)
   #Compute Lapack SVD
-  U, Sigma, VH = np.linalg.svd(ThetaTmp, full_matrices=True)
+  try:
+      U, Sigma, VH = sp.linalg.svd(ThetaTmp, full_matrices=True,lapack_driver='gesvd')
+  except(linalg.LinAlgError):
+      U, Sigma, VH = sp.linalg.svd(ThetaTmp, full_matrices=True,lapack_driver='gesdd')
 
   #Truncate SVD matrices (accuracy_OK = True cause Lapack returns all sigmas and we'll always be able to reach 
   #sufficiently small trunc error or end up keeping all sigmas)

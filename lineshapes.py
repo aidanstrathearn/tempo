@@ -7,6 +7,13 @@ from numpy import array,zeros
 def lgam(x):
     return log(cgamma(x))
 
+def sp3d_norm(mu,T,wc):
+    d=1/mu
+    return (-2*(d)**2*wc**6*(10+9*d**2*wc**2+3*d**4*wc**4)/(1+d**2*wc**2)**3 
+            -1j*(T**3/d)*(polygamma(2,T/wc-1j*d*T)-polygamma(2,T/wc+1j*d*T))
+            +2*T**4*polygamma(3,T/wc))
+
+
 #lineshape for spectral density: A*w^s*e^(-w/wc) at temperature T
 # zetas have poles at s=1,2 so need separate function for these cases
 def eta_g(t,T,s,wc,A):
@@ -29,7 +36,9 @@ def eta_0T_s1(t,wc,A):
 
 #lineshape for super ohmic with spatial correlations: J=A*w^3*e^(-w/wc)*(1-sinc(w/mu))
 def eta_sp_s3(t,T,wc,mu,A):
-    return 0.5*A*T**2*(-2*wc**3*(-2j*t*mu**4+mu**2*wc+wc**3)*T**(-2)*(mu**2+wc**2)**(-2)-1j*mu*T**(-1)*(euler-harmonic(T*(-1j*mu**(-1)*(1+t*mu)+wc**(-1)))+polygamma(0,1+T*(-1j*t+1j*mu**(-1)+wc**(-1)))+2*polygamma(0,(mu-1j*wc)*T*(mu*wc)**(-1))-2*polygamma(0,(mu+1j*wc)*T*(mu*wc)**(-1))-polygamma(0,T*(mu*wc)**(-1)*(mu+1j*(-1+t*mu)*wc))+polygamma(0,T*(mu*wc)**(-1)*(mu+1j*(1+t*mu)*wc)))+4*polygamma(1,T*wc**(-1))-2*polygamma(1,T*wc**(-1)*(1+wc*T**(-1)-1j*t*wc))-2*polygamma(1,T*wc**(-1)*(1+1j*t*wc)))
+    return 0.5*A*T**2*(-2*wc**3*(-2j*t*mu**4+mu**2*wc+wc**3)*T**(-2)*(mu**2+wc**2)**(-2)
+                       -1j*mu*T**(-1)*(euler-harmonic(T*(-1j*mu**(-1)*(1+t*mu)
+                       +wc**(-1)))+polygamma(0,1+T*(-1j*t+1j*mu**(-1)+wc**(-1)))+2*polygamma(0,(mu-1j*wc)*T*(mu*wc)**(-1))-2*polygamma(0,(mu+1j*wc)*T*(mu*wc)**(-1))-polygamma(0,T*(mu*wc)**(-1)*(mu+1j*(-1+t*mu)*wc))+polygamma(0,T*(mu*wc)**(-1)*(mu+1j*(1+t*mu)*wc)))+4*polygamma(1,T*wc**(-1))-2*polygamma(1,T*wc**(-1)*(1+wc*T**(-1)-1j*t*wc))-2*polygamma(1,T*wc**(-1)*(1+1j*t*wc)))
 
 #lineshape for ohmic with spatial correlations: J=A*w*e^(-w/wc)*(1-cos(w/mu))
 def eta_sp_s1(t,T,wc,mu,A):
@@ -46,6 +55,22 @@ def eta_sp_s1(t,T,wc,mu,A):
                  -2*lgam((T/wc)+1j*T*t)
                  )
                  
+def neta_sp_s3(t,T,wc,mu,A):
+    d=1/mu
+    b=1/T
+    return A*(d**2*wc**4*(-1-d**2*wc**2)/(1+d**2*wc**2)**2
+            -1j*(1/(b*d))*polygamma(0,(1-1j*d*wc)/(b*wc))
+            +1j*(1/(2*b*d))*(
+                    2*polygamma(0,(1+1j*d*wc)/(b*wc))
+                    -polygamma(0,(1+(b+1j*(d-t))*wc)/(b*wc))
+                    +polygamma(0,(1-1j*(d-t)*wc)/(b*wc))
+                    -polygamma(0,(1+1j*(d+t)*wc)/(b*wc))
+                    +polygamma(0,(1+(b-1j*(d+t))*wc)/(b*wc)))
+            -(1/b**2)*(
+                    -2*polygamma(1,1/(b*wc))
+                    +polygamma(1,(1+b*wc-1j*t*wc)/(b*wc))
+                    +polygamma(1,(1+1j*t*wc)/(b*wc)))
+            )
 
 #combines all of above for the general lineshape - still buggy though for some params
 def eta_all(t,T,s,wc,mu,A):
