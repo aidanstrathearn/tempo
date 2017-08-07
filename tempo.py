@@ -27,45 +27,16 @@ for o, a in myopts:
 # Display input and output file name passed as the args
 print ("Input file : %s and output file: %s" % (in_filename, out_filename) )
 
+#eigs,coup,rho,ham,dt,ntot,dkmax,prec = np.loadtxt(in_filename, unpack=True)
 
-# Load data from in_file
-delt, nsteps, meth, vals, coup, dkmax = np.loadtxt(in_filename, unpack=True) 
-
-#convert input to integers 
-nsteps = int(nsteps)
-meth = int(meth)
-dkmax = int(dkmax)
-vals= int(vals)
+f=open(in_filename,"rb")
+din=pickle.load(f)
 
 #Check if params were loaded correctly
-print("Params loaded from in_file: ", delt, nsteps, meth, vals, coup, dkmax)
+print("Params loaded from in_file: ",din)
 
-#to go to larger spin
-#hamil=[[0,1,0],[1,0,1],[0,1,0]]
-#eigs=[-1,0,1]
-#irho=[[1,0,0],[0,0,0],[0,0,0]]
-#
-
-hamil=[[0,1],[1,0]]
-eigs=[-1,1]
-hdim=len(eigs)
-irho=[[1,0],[0,0]]
-qp.trot=0
-modc=0
 def eta(t):
-    return ln.eta_0T_s1(t,10,coup)
-qp.ctab=qp.mcoeffs(modc,eta,dkmax,delt,nsteps)
+    return ln.eta_all(t,din[7][3],din[7][1],din[7][2],din[7][4],din[7][0])
 
 #get tempo data
-nmp.tempoalg(modc,eigs,dkmax,eta,hamil,delt,irho,nsteps,meth,10**(-0.1*vals),out_filename)
-
-'''
-tdat=open(location+"test"+str(dkmax)+".pickle","rb")
-mytdat=pickle.load(tdat,encoding='bytes')
-tdat.close()
-#dd=open(location+"test"+str(dkmax)+".dat","w")
-out_file=open(out_filename,"a")
-for k in range(0,len(mytdat)):
-    out_file.write(str(mytdat[k][0])+" "+str(2*(mytdat[k][1][1]).real)+" "+str(2*(mytdat[k][1][1]).imag)+" "+str((mytdat[k][1][0]-mytdat[k][1][3]).real)+"\n")
-out_file.close()
-'''
+nmp.tempo(din[2],eta,din[1],din[0],din[3],din[4],din[5],din[6],datf=out_filename)
