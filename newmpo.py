@@ -11,6 +11,7 @@ import time
 from numpy import linalg, zeros
 import matplotlib.pyplot as plt
 from math import fmod
+from tensor_algebra import *
 
 def sitetensor(eigl,dk,dkm,k,n,ham,dt):
     #constructs the rank-4 tensors sites that make up the network
@@ -57,6 +58,7 @@ def tempo(eigl,eta,irho,ham,dt,ntot,dkm,p,c=1,mod=0,datf=None,mpsf=None):
     t0=time.time()
     svds=['fraction','accuracy','chi']
     l=len(eigl)
+    precision=10**(-0.1*p)
     qp.trot=0
     qp.ctab=qp.mcoeffs(mod,eta,dkm,dt,ntot)
     
@@ -83,16 +85,18 @@ def tempo(eigl,eta,irho,ham,dt,ntot,dkm,p,c=1,mod=0,datf=None,mpsf=None):
     
     #iteratively apply MPO's to the MPS and readout/store data
     for jj in range(1,ntot+1):
-        print("\npoint: "+str(jj))
+        print("\npoint: "+str(jj)+" of "+str(ntot))
         ttt=time.time()
         
         #readout physical density matrix and append to data list/save to file
         dat=mps.readout(termmpo)
         datlis.append([jj*dt,dat])
-        if type(datf)==str: pickle.dump([jj*dt,dat],datfile)
+        if type(datf)==str: 
+            pickle.dump([jj*dt,dat],datfile)
+            datfile.flush()
         
         #contract with propagation mpo and insert the new end site, growing the MPS by one site
-        mps.contract_with_mpo(propmpo,prec=p,trunc_mode=svds[c])
+        mps.contract_with_mpo(propmpo,prec=precision,trunc_mode=svds[c])
         mps.insert_site(0,edge)
         
         if jj<dkm:
@@ -124,33 +128,97 @@ def tempo(eigl,eta,irho,ham,dt,ntot,dkm,p,c=1,mod=0,datf=None,mpsf=None):
         if fmod(jj,dkm+1)==0 and type(mpsf)==str:
             mpsfile=open(mpsf,"wb")
             pickle.dump(mps,mpsfile)
-            mpsfile.close()        
+            mpsfile.close()    
+            
         print("bond dims: "+str(mps.bonddims())+" total size: "+str(mps.totsize()))
-        print("time: "+str(time.time()-ttt)+" prec: "+str(p)+" length: "+str(mps.N_sites))
-    print(time.time()-t0)
+        print("time: "+str(time.time()-ttt)+" prec: "+str(precision)+" length: "+str(mps.N_sites))
+        
+    print('\ntotal time: ' + str(time.time()-t0))
     if type(datf)==str: datfile.close()
     return datlis 
 
-hamil=[[0,1],[1,0]] 
-eigs=[1,-1]
-irho=[[1,0],[0,0]]
+hamil=[[0,1],
+       [1,0]] 
 
-for cc in [45]:
+eigs=[1,-1]
+
+irho=[[1,0],
+      [0,0]]
+
+
+'''
+hamil=[[0,1,0],
+       [1,0,1],
+       [0,1,0]] 
+
+eigs=[1,0,-1]
+
+irho=[[1,0,0],
+      [0,0,0],
+      [0,0,0]]
+'''
+
+'''
+hamil=[[0,1,0,0],
+       [1,0,1,0],
+       [0,1,0,1],
+       [0,0,1,0]] 
+
+eigs=[1,0.5,-0.5,-1]
+
+irho=[[1,0,0,0],
+      [0,0,0,0],
+      [0,0,0,0],
+      [0,0,0,0]]
+'''
+
+'''
+hamil=[[0,1,0,0,0],
+       [1,0,1,0,0],
+       [0,1,0,1,0],
+       [0,0,1,0,1],
+       [0,0,0,1,0]] 
+
+eigs=[1,0.5,0,-0.5,-1]
+
+irho=[[1,0,0,0,0],
+      [0,0,0,0,0],
+      [0,0,0,0,0],
+      [0,0,0,0,0],
+      [0,0,0,0,0]]
+'''
+
+
+for cc in [130,120,110,100,90,80,70,60]:
     for mu in [50]:
-        for kk in [20]:
-            for pp in [30]:
+        for kk in [30,40,50]:
+            for pp in [90]:
                 def eta1(t):
                     #return ln.sp3d_norm(0.000001,1,1)*ln.eta_sp_s3(t,1,1,0.01*mu,0.5*0.01*cc)/ln.sp3d_norm(0.01*mu,1,1)
                     #return ln.neta_sp_s3(t,1,1,0.01*mu,0.5*0.01*kk) #timestep 10/85
-                    return ln.eta_sp_s1(t,0.2,7.5,0.001,0.5*0.01*10) 
+                    #return ln.eta_sp_s1(t,0.2,7.5,0.001,1.0)
+                    return ln.eta_all(t,0,1,10,0,0.5*0.01*cc)
                 
                 dkmax=kk
-                nt=30
-                delt=0.1
-                daa=tempo(eigs,eta1,irho,hamil,delt,nt,dkmax,10**(-3))
+                
+                delt=0.12/7
+                nt=1000
+                #nt=int(np.ceil(8/delt))
+                print(nt)
+                #qp.ctab=qp.mcoeffs(0,eta1,kk,delt,nt)
+                name="spinhalf_coup"+str(cc)+"_dkm"+str(dkmax)+"_prec"+str(pp)+".pickle"
+                daa=tempo(eigs,eta1,irho,hamil,delt,nt,dkmax,pp,datf=name)
 
+#site1=mpo_site(tens_in=TensMul(sitetensor(eigs,2,10,9,10,hamil,delt),sitetensor(eigs,1,10,9,10,hamil,delt)))
+#site2=mpo_site(tens_in=TensMul(sitetensor(eigs,3,10,9,10,hamil,delt),site1.m))
+#sited1=mpo_site(tens_in=TensMul(sitetensor(eigs,3,10,9,10,hamil,delt),sitetensor(eigs,2,10,9,10,hamil,delt)))
+#sited2=mpo_site(tens_in=TensMul(sitetensor(eigs,4,10,9,10,hamil,delt),sited1.m))
+
+#site3=mpo_site(tens_in=TensMul(sitetensor(eigs,5,10,5,10,hamil,delt),sitetensor(eigs,4,10,5,10,hamil,delt)))
 #daa2=qp.quapi(modc,eigs,eta,6,hamil,0.1,irho,18,"_dk")
+#site2.svd_mpo_site(sited2,0.1,'accuracy')
 
+#print(site2.m.shape)
 #######################################################################################################
 #######################################################################################################
  #timestep=1/15 prec=70 for mccutcheon11
