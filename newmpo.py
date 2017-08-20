@@ -12,6 +12,21 @@ from numpy import linalg, zeros
 import matplotlib.pyplot as plt
 from math import fmod
 from tensor_algebra import *
+import os.path
+
+def datload(filename):
+    #function to unpickle data files and output them as a list
+    f=open(filename, "rb")
+    dlst=pickle.load(f,encoding='bytes')
+
+    while 1:
+        try:
+            dlst.append(pickle.load(f))
+        except (EOFError):
+            break
+    
+    f.close()
+    return dlst
 
 def sitetensor(eigl,dk,dkm,k,n,ham,dt):
     #constructs the rank-4 tensors sites that make up the network
@@ -48,12 +63,17 @@ def tempo_mpoblock(eigl,ham,dt,dkm,k,n):
             blk.append_site(sitetensor(eigl,ii,dkm,k,n,ham,dt))
     return blk
 
-def tempo(eigl,eta,irho,ham,dt,ntot,dkm,p,c=1,mod=0,datf=None,mpsf=None):
+def tempo(eigl,eta,irho,ham,dt,ntot,dkm,p,c=1,mod=0,datf=None,savemps=None):
     #implements state propogation using TEMPO
     #datf and mpsf are the filenames for the data and mps to be stored to
     #c is the truncation method and labels elemlents of svds list below
     #p is the appropriate truncation paramater that goes with the method c
+
+    #define rank-3 tensor by giving a delt a dummy west index. this is used as the new end site
+    #of the mps after each contraction with an mpo
+    edge=np.expand_dims(np.eye(len(eigl)**2),1)
     
+        
     #set some parameters and create table of makri coeffs qp.ctab from eta
     t0=time.time()
     svds=['fraction','accuracy','chi']
@@ -66,32 +86,71 @@ def tempo(eigl,eta,irho,ham,dt,ntot,dkm,p,c=1,mod=0,datf=None,mpsf=None):
     rho=np.array(irho).reshape(l**2)
     datlis=[[0,rho]]
     
-    #if saving the file then dump the initial data
-    if type(datf)==str:
-        datfile=open(datf,"wb")
-        pickle.dump(datlis,datfile)
-    
     #initialse blank MPS and create a single site from the initial state rho and the first 
     #influence functional factor I0
     mps=mps_block(0,0,0)
     mps.insert_site(0,np.expand_dims(np.expand_dims(rho*qp.itab(eigl,0,0,ntot,ntot)[0][:],-1),-1))
-    
-    #define rank-3 tensor by giving a delt a dummy west index. this is used as the new end site
-    #of the mps after each contraction with an mpo
-    edge=np.expand_dims(np.eye(len(eigl)**2),1)
-    
+    jj0=1
     #initialise single site propagator mpo and termination propagator mpo 
     propmpo,termmpo=tempo_mpoblock(eigl,ham,dt,1,1,ntot),tempo_mpoblock(eigl,ham,dt,1,1,1)
     
+    #set how regularly the mps is saved - only if also writing data to file
+    if type(datf)==str and type(savemps)==int:
+        smps=savemps
+    else:
+        smps=ntot+1
+    
+    if type(datf)==str:
+        #check if data files and mps already exists
+        if os.path.isfile(datf) and os.path.isfile('mps_'+datf):
+            #extraxt mps and the timestep it is at
+            mpsfile=open('mps_'+datf,"rb")
+            mps=pickle.load(mpsfile)           
+            jj0=pickle.load(mpsfile)
+            mpsl=mps.N_sites
+            #build correct sized mpos to resume propagation
+            if jj0<=dkm:
+                propmpo,termmpo=tempo_mpoblock(eigl,ham,dt,jj0,jj0,ntot),tempo_mpoblock(eigl,ham,dt,jj0,jj0,jj0)
+            elif mod==1:
+                propmpo,termmpo=tempo_mpoblock(eigl,ham,dt,mpsl,jj0,ntot),tempo_mpoblock(eigl,ham,dt,mpsl,jj0,jj0)
+            else:
+                propmpo,termmpo=tempo_mpoblock(eigl,ham,dt,mpsl,mpsl+1,ntot),tempo_mpoblock(eigl,ham,dt,mpsl,mpsl+1,mpsl+1)
+            
+            #import previous data
+            datlis=datload(datf)
+            #check we arent asking for data we already have
+            if len(datlis)>=ntot:
+                return print("data already collected up to ntot")
+            #trim data back since there might already exist data for points beyond
+            #where the last mps was saved
+            datlis=datload(datf)[:jj0]
+            #reopen previous data file and overwrite with trimmed data ready to append new data to
+            datfile=open(datf,"wb")
+            pickle.dump(datlis,datfile)
+            print("resuming propagation")
+         
+        else:
+            #if either data or mps files dont exist then start fresh data file
+            datfile=open(datf,"wb")
+            pickle.dump(datlis,datfile)
+
+    
     #iteratively apply MPO's to the MPS and readout/store data
-    for jj in range(1,ntot+1):
+    for jj in range(jj0,ntot+1):
         print("\npoint: "+str(jj)+" of "+str(ntot))
         ttt=time.time()
         
         #readout physical density matrix and append to data list/save to file
         dat=mps.readout(termmpo)
         datlis.append([jj*dt,dat])
-        if type(datf)==str: 
+        
+        if type(datf)==str:
+            if fmod(jj,smps)==0:
+                mpsfile=open('mps_'+datf,"wb")
+                pickle.dump(mps,mpsfile)
+                pickle.dump(jj,mpsfile)
+                mpsfile.close()  
+                
             pickle.dump([jj*dt,dat],datfile)
             datfile.flush()
         
@@ -124,18 +183,13 @@ def tempo(eigl,eta,irho,ham,dt,ntot,dkm,p,c=1,mod=0,datf=None,mpsf=None):
             #we only need to contract the end mps site
             mps.contract_end()   
         
-        #save mps to file every dkm+1 steps if valid filename mpsf is provided
-        if fmod(jj,dkm+1)==0 and type(mpsf)==str:
-            mpsfile=open(mpsf,"wb")
-            pickle.dump(mps,mpsfile)
-            mpsfile.close()    
-            
         print("bond dims: "+str(mps.bonddims())+" total size: "+str(mps.totsize()))
         print("time: "+str(time.time()-ttt)+" prec: "+str(precision)+" length: "+str(mps.N_sites))
         
     print('\ntotal time: ' + str(time.time()-t0))
     if type(datf)==str: datfile.close()
     return datlis 
+
 
 hamil=[[0,1],
        [1,0]] 
@@ -144,14 +198,29 @@ eigs=[1,-1]
 
 irho=[[1,0],
       [0,0]]
+'''
+def eta1(t):
+    return ln.eta_all(t,0,1,10,0,0.5*0.01*5)
+
+                
+delt=2/60
+nt=180
+#nt=int(np.ceil(2/delt))
+print(nt)
+qp.ctab=qp.mcoeffs(0,eta1,100,delt,100)
+w,v=linalg.eig(qp.itab(eigs,1,40,100,100))                
+print(w)
+'''
 
 
 '''
-hamil=[[0,1,0],
-       [1,0,1],
-       [0,1,0]] 
+el=2**0.5
+#el=1
+hamil=[[0,el,0],
+       [el,0,el],
+       [0,el,0]] 
 
-eigs=[1,0,-1]
+eigs=[2,0,-2]
 
 irho=[[1,0,0],
       [0,0,0],
@@ -159,12 +228,28 @@ irho=[[1,0,0],
 '''
 
 '''
-hamil=[[0,1,0,0],
-       [1,0,1,0],
-       [0,1,0,1],
-       [0,0,1,0]] 
+el=3**0.5
+hamil=[[0,el,0,0],
+       [el,0,2,0],
+       [0,2,0,el],
+       [0,0,el,0]] 
 
-eigs=[1,0.5,-0.5,-1]
+eigs=[3,1,-1,-3]
+
+irho=[[1,0,0,0],
+      [0,0,0,0],
+      [0,0,0,0],
+      [0,0,0,0]]
+'''
+
+'''
+el=3**0.5
+hamil=[[0,1,1,0],
+       [1,0,0,1],
+       [1,0,0,1],
+       [0,1,1,0]] 
+
+eigs=[2,0,0,-2]
 
 irho=[[1,0,0,0],
       [0,0,0,0],
@@ -189,10 +274,10 @@ irho=[[1,0,0,0,0],
 '''
 
 
-for cc in [130,120,110,100,90,80,70,60]:
-    for mu in [50]:
-        for kk in [30,40,50]:
-            for pp in [90]:
+for cc in [10]:
+    for mu in [10]:
+        for kk in [5]:
+            for pp in [60]:
                 def eta1(t):
                     #return ln.sp3d_norm(0.000001,1,1)*ln.eta_sp_s3(t,1,1,0.01*mu,0.5*0.01*cc)/ln.sp3d_norm(0.01*mu,1,1)
                     #return ln.neta_sp_s3(t,1,1,0.01*mu,0.5*0.01*kk) #timestep 10/85
@@ -201,13 +286,17 @@ for cc in [130,120,110,100,90,80,70,60]:
                 
                 dkmax=kk
                 
-                delt=0.12/7
-                nt=1000
-                #nt=int(np.ceil(8/delt))
-                print(nt)
+                delt=1
+                nt=40
+                #nt=int(np.ceil(2/delt))
+                #print(nt)
                 #qp.ctab=qp.mcoeffs(0,eta1,kk,delt,nt)
-                name="spinhalf_coup"+str(cc)+"_dkm"+str(dkmax)+"_prec"+str(pp)+".pickle"
-                daa=tempo(eigs,eta1,irho,hamil,delt,nt,dkmax,pp,datf=name)
+                name="test3_coup"+str(cc)+"_dkm"+str(dkmax)+"_prec"+str(pp)+".pickle"
+                daa=tempo(eigs,eta1,irho,hamil,delt,nt,dkmax,pp,datf=name,savemps=4)
+           
+
+
+
 
 #site1=mpo_site(tens_in=TensMul(sitetensor(eigs,2,10,9,10,hamil,delt),sitetensor(eigs,1,10,9,10,hamil,delt)))
 #site2=mpo_site(tens_in=TensMul(sitetensor(eigs,3,10,9,10,hamil,delt),site1.m))
