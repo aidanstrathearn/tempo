@@ -32,7 +32,8 @@ def eta_0T(t,s,wc,A):
 
 #T=0 and s=1
 def eta_0T_s1(t,wc,A):
-    return A*log(1+1j*t*wc)
+    return A*log(1+1j*wc*t)-1j*A*wc*t
+    
 
 #lineshape for super ohmic with spatial correlations: J=A*w^3*e^(-w/wc)*(1-sinc(w/mu))
 def eta_sp_s3(t,T,wc,mu,A):
