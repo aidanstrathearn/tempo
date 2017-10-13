@@ -3,16 +3,89 @@ import math
 import sys
 import copy as cp
 import numpy as np
+import scipy as sp
 from scipy.sparse.linalg import svds
 import ErrorHandling as err
+from numba import jit
+from numpy import linalg
 
 
-__all__ = ["TensMul", "reshape_matrix_into_tens3d", "reshape_tens3d_into_matrix", "compute_lapack_svd", "compute_arnoldi_svd", "truncate_svd_matrices", "set_trunc_params", "lapack_preferred", "sigma_dim"]
-
-
+__all__ = ["TensMul","reshape_matrix_into_tens4d", "reshape_matrix_into_tens3d","reshape_tens4d_into_matrix", "reshape_tens3d_into_matrix", "compute_lapack_svd", "compute_arnoldi_svd", "truncate_svd_matrices", "set_trunc_params", "lapack_preferred", "sigma_dim"]
 
 def TensMul(tensA_in, tensB_in):
+  #print('tensmul')
+  #print(tensA_in.shape)
+  #print(tensB_in.shape)
+  #Prepare tensA, tensB --> both should be 4D arrays (should create copies to prevent unwanted modification)
+  #tensA = tensA_in.copy; tensB = tensB_in.copy
+  #tensA = cp.deepcopy(tensA_in); tensB = cp.deepcopy(tensB_in)
+  if (tensA_in.ndim==3): tensA = tensA_in[np.newaxis, ...] 
+  else: tensA=tensA_in      
+  if (tensB_in.ndim==3): tensB = tensB_in[:, np.newaxis, ...] 
+  else: tensB=tensB_in
+  
+  tensO=np.dot(np.swapaxes(tensA,1,3),np.swapaxes(tensB,0,2))
+  #del tensA, tensB
+  rs=tensO.shape
+  tensO=np.reshape(np.swapaxes(tensO,1,4),(rs[0],rs[4],rs[2]*rs[3],rs[1]*rs[5]))
+  #print(np.count_nonzero(rank6-tensO))
+  if (tensO.shape[0] == 1) and (tensO.shape[1] == 1): tensO = tensO[0,0,:,:]                                                      
+  elif (tensO.shape[0] == 1): tensO = tensO[0,:,:,:] 
+  elif (tensO.shape[1] == 1): tensO = tensO[:,0,:,:] 
+  #print(tensO.shape)
+  return tensO
 
+def TensMul2(tensA_in, tensB_in):
+
+  #print('tensmul')
+  #print(tensA_in.shape)
+  #print(tensB_in.shape)
+  #Prepare tensA, tensB --> both should be 4D arrays (should create copies to prevent unwanted modification)
+  tensA = cp.deepcopy(tensA_in); tensB = cp.deepcopy(tensB_in)
+  if (tensA.ndim==3): tensA = tensA[np.newaxis, ...]       
+  if (tensB.ndim==3): tensB = tensB[:, np.newaxis, ...] 
+  #print(tensA.shape)
+  #print(tensB.shape)
+  #Find dims of tensA, tensB 
+  dimA = np.asarray(tensA.shape); dimB = np.asarray(tensB.shape)
+
+  #Initialize tensO
+  #tensO=np.zeros((dimA[0], dimB[1], dimA[2]*dimB[2], dimA[3]*dimB[3]), dtype=complex)
+  
+  #print(np.swapaxes(tensA,1,3).shape)
+  #print(np.swapaxes(tensB,0,3).shape)
+  tensA=np.reshape(np.swapaxes(tensA,1,3),(-1,dimA[1]))
+  tensB=np.swapaxes(np.reshape(np.swapaxes(tensB,0,3),(-1,dimB[0])),0,1)
+  
+  rank6=np.reshape(np.dot(tensA,tensB),(dimA[0],dimA[3],dimA[2],dimB[3],dimB[2],dimB[1]))
+  #print(rank6.shape)
+  #print('good dot')
+  #Compute product of tensA, tensB
+  '''
+  for ia in range(dimA[2]):
+     for ib in range(dimB[2]):
+        for ja in range(dimA[3]):
+           for jb in range(dimB[3]):
+               tensO[:, :, ib + ia*dimB[2], jb + ja*dimB[3]] = rank6[:,ja,ia,jb,ib,:]
+  '''             
+  rank6=np.swapaxes(np.swapaxes(np.swapaxes(rank6,1,5),3,4),4,5)
+  rs=rank6.shape
+  tensO=np.reshape(rank6,(rs[0],rs[1],rs[2]*rs[3],rs[4]*rs[5]))
+  #print(np.count_nonzero(rank6-tensO))
+  
+  
+  if (tensO.shape[0] == 1) and (tensO.shape[1] == 1): tensO = tensO[0,0,:,:]                                                      
+  elif (tensO.shape[0] == 1): tensO = tensO[0,:,:,:] 
+  elif (tensO.shape[1] == 1): tensO = tensO[:,0,:,:] 
+  
+  #print(tensO.shape)
+  return tensO
+
+
+def TensMul3(tensA_in, tensB_in):
+  #print('tensmul')
+  #print(tensA_in.shape)
+  #print(tensB_in.shape)
   #Prepare tensA, tensB --> both should be 4D arrays (should create copies to prevent unwanted modification)
   tensA = cp.deepcopy(tensA_in); tensB = cp.deepcopy(tensB_in)
   if (tensA.ndim==3): tensA = tensA[np.newaxis, ...]       
@@ -36,7 +109,10 @@ def TensMul(tensA_in, tensB_in):
   elif (tensO.shape[0] == 1): tensO = tensO[0,:,:,:] 
   elif (tensO.shape[1] == 1): tensO = tensO[:,0,:,:] 
   
+  #print(tensO.shape)
   return tensO
+
+
 
 
 
@@ -47,18 +123,18 @@ def reshape_matrix_into_tens3d(matIn, dimOut):
   tensOut=np.zeros((dimOut[0], dimOut[1], dimOut[2]), dtype=complex)
 
   if (matIn.shape[1] == dimOut[2]):
-
-     for i in range(dimOut[0]):
-         tensOut[i,:,:] = matIn[i*dimOut[1] : (i+1)*dimOut[1] , :]
+     #for i in range(dimOut[0]):
+     #    tensOut[i,:,:] = matIn[i*dimOut[1] : (i+1)*dimOut[1] , :]
+     matIn=np.reshape(matIn,(dimOut[0], dimOut[1], dimOut[2]))
+     #print(np.count_nonzero(tensOut-matIn))
 
   elif (matIn.shape[0] == dimOut[1]):
 
-     for i in range(dimOut[0]):
-         tensOut[i,:,:] = matIn[: , i*dimOut[2] : (i+1)*dimOut[2]]
-
-  return tensOut
-
-
+     #for i in range(dimOut[0]):
+     #    tensOut[i,:,:] = matIn[: , i*dimOut[2] : (i+1)*dimOut[2]]
+     matIn=np.swapaxes(np.reshape(matIn.T,(dimOut[0], dimOut[2], dimOut[1])),1,2)
+     #print(np.count_nonzero(tensOut-matIn))
+  return matIn
 
 
 
@@ -82,6 +158,41 @@ def reshape_tens3d_into_matrix(tensIn, dimOut):
          matOut[: , i*dimIn[2] : (i+1)*dimIn[2]] = tensIn[i,:,:]
 
   return matOut
+
+def reshape_tens4d_into_matrix(tensIn,dimOut):
+
+  #dims of tensIn
+  dimIn = np.asarray(tensIn.shape)
+  #print(dimIn)
+  #Initialize matrixOut to zeros
+  matOut1=np.zeros((dimIn[0]*dimIn[1], dimIn[2], dimIn[3]), dtype=complex)
+  matOut2=np.zeros((dimIn[0]*dimIn[1]*dimIn[2], dimIn[3]), dtype=complex)
+  
+  for i in range(dimIn[0]):
+         matOut1[i*dimIn[1] : (i+1)*dimIn[1] ,:, :] = tensIn[i,:,:,:]
+  
+  for i in range(dimIn[0]*dimIn[1]):
+         matOut2[i*dimIn[2] : (i+1)*dimIn[2] , :] = matOut1[i,:,:]
+  
+  return matOut2
+
+def reshape_matrix_into_tens4d(matIn, dimOut):
+
+
+  if matIn.shape[1]!=dimOut[3] or (dimOut[0]*dimOut[1]*dimOut[2])!=matIn.shape[0]:
+      print("mat to tens error")
+      return 0
+  #Initialize matrixOut to zeros
+  TensOut1=np.zeros((dimOut[0]*dimOut[1], dimOut[2], dimOut[3]), dtype=complex)
+  TensOut2=np.zeros((dimOut[0], dimOut[1], dimOut[2], dimOut[3]), dtype=complex)
+  
+  for i in range(dimOut[0]*dimOut[1]):
+          TensOut1[i,:,:] = matIn[i*dimOut[2] : (i+1)*dimOut[2] , :]
+         
+  for i in range(dimOut[0]):
+         TensOut2[i,:,:,:] = TensOut1[i*dimOut[1] : (i+1)*dimOut[1] ,:, :]
+  #print(TensOut2.shape)
+  return TensOut2
 
 
 
@@ -159,7 +270,7 @@ def set_trunc_params(prec, trunc_mode, sigma_dim):
 
 #Decide whether to use Lapack or Arnoldi
 def lapack_preferred(dimT, Edim, chi):
-  return (chi > 0.11*sigma_dim(dimT)) or (Edim == 1)
+  return  True #(chi > 0.11*sigma_dim(dimT)) or (Edim == 1)
       
   
 
@@ -172,13 +283,17 @@ def sigma_dim(dimT):
 #Compute SVD using Lapack
 def compute_lapack_svd(theta, chi, eps):
 
-  print('Starting Lapack SVD')
-
+  #print('Starting Lapack SVD')
+  #print('theta')
+  #print(theta)
   #Create a copy to prevent an accidental modification of theta
   ThetaTmp = cp.deepcopy(theta)
-
+  #print(ThetaTmp)
   #Compute Lapack SVD
-  U, Sigma, VH = np.linalg.svd(ThetaTmp, full_matrices=True)
+  try:
+      U, Sigma, VH = sp.linalg.svd(ThetaTmp, full_matrices=True,lapack_driver='gesvd')
+  except(linalg.LinAlgError):
+      U, Sigma, VH = sp.linalg.svd(ThetaTmp, full_matrices=True,lapack_driver='gesdd')
 
   #Truncate SVD matrices (accuracy_OK = True cause Lapack returns all sigmas and we'll always be able to reach 
   #sufficiently small trunc error or end up keeping all sigmas)
@@ -187,12 +302,22 @@ def compute_lapack_svd(theta, chi, eps):
 
   return U, U.conj().T, chi, accuracy_OK
 
-
+'''
+arr=np.array([[[0,1,2],[3,4,5]],[[6,7,8],[9,10,11]],[[12,13,14],[15,16,17]]])
+print(arr.shape)
+arr1=arr.reshape(6,3)
+u, sig, vt=np.linalg.svd(arr1, full_matrices=False)
+print(u.shape)
+print(np.dot(u.T.conj(),u))
+print(vt.shape)
+print(np.diag(sig).shape)
+'''
+#print(arr1-np.dot(u,np.dot(sig,vt)))
 
 #Compute SVD using Arnoldi
 def compute_arnoldi_svd(theta, chi, eps):
 
-  print('Starting Arnoldi SVD')
+  #print('Starting Arnoldi SVD')
 
   #Create a copy to prevent an accidental modification of theta
   ThetaTmp = cp.deepcopy(theta)
@@ -205,7 +330,7 @@ def compute_arnoldi_svd(theta, chi, eps):
       chi=int(np.ceil(0.11*sigma_dim(dimT)))
 
   #Compute Arnoldi SVD
-  U, Sigma, VH = svds(ThetaTmp, k=chi, ncv=np.minimum(3*chi+1,dimT[1]), tol=10**(-5), which='LM', v0=None, maxiter=10*chi, return_singular_vectors=True)
+  U, Sigma, VH = svds(ThetaTmp, k=chi, ncv=np.minimum(3*chi+1,dimT[1]), tol=10**(-5), which='LM', v0=None, maxiter=100*chi, return_singular_vectors=True)
 
   #Have we achieved target accuracy? (such that truncErr < eps)
   accuracy_OK = truncErr_below_eps(Sigma, eps)
@@ -214,11 +339,11 @@ def compute_arnoldi_svd(theta, chi, eps):
       #if not, repeat SVD with incremented chi
       dChi = 2
       chi = chi + dChi 
-      print('Arnoldi SVD: target accuracy not achieved with chi = ', chi - dChi, ', increasing chi to ', chi)
+      #print('Arnoldi SVD: target accuracy not achieved with chi = ', chi - dChi, ', increasing chi to ', chi)
 
   else: 
       #if yes, proceed to the truncation of svd matrices
-      print('Arnoldi SVD: target accuracy achieved with chi = ', chi)
+      #print('Arnoldi SVD: target accuracy achieved with chi = ', chi)
       U, chi = truncate_svd_matrices(U, Sigma, chi, eps)
 
   return U, U.conj().T, chi, accuracy_OK
@@ -248,10 +373,10 @@ def truncate_svd_matrices(U, Sigma, chi, eps):
         elif (i == sdimTmp): 
             chi = sdimTmp
  
-  print('Truncating SVD results to chi = ', chi, ' out of ', sdimTmp)
+  #print('Truncating SVD results to chi = ', chi, ' out of ', sdimTmp)
 
-  for i in range(min(chi + 5, sdimTmp)):
-      print('Sigma: ', Sigma[i]/np.sum(Sigma[0:chi]), 'at i', i)
+  #for i in range(min(chi + 5, sdimTmp)):
+   #   print('Sigma: ', Sigma[i]/np.sum(Sigma[0:chi]), 'at i', i)
 
   #return truncated U matrix
   return U[:, 0:chi], chi

@@ -1,9 +1,13 @@
 #!/bin/bash
 
-#Find out where we are
-BASE=`pwd`
+declare -a kk_lis=(60 65)
+declare -a ll_lis=(80)
+declare -a jj_lis=(120)
 
-for dkmax in 1 2; do 
-    python tempo.py -i params_tempo_dkmax=${dkmax}.txt -o output_tempo_dkmax=${dkmax}.txt
+for kk in "${kk_lis[@]}"; do
+    for ll in "${ll_lis[@]}"; do
+        for jj in "${jj_lis[@]}"; do
+            qsub sh_coup${jj}_dkm${ll}_prec${kk}.sh
 done
-
+done
+done

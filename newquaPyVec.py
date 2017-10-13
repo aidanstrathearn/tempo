@@ -97,6 +97,7 @@ def icomp(sp,sm,sdp,sdm,dk,k,n,dkm):
     return exp(phi)
     
 def itab(eigl,dk,k,n,dkm):
+
     #explicitly constructs the influence functional factors Idk(sk,sdk)
     #eigl is the list of eigenvalues of the coupled system operator 
     #(these are the values that sk and sdk can take)
@@ -607,7 +608,7 @@ def auto_trot(mod,eigl,eta,ham,initrho,t_tot,tol):
         #
         #find max error
         error=max(comp)
-        
+        print("error: "+str(error))
         
         #reduce timestep and try again
         indelt=indelt*0.9

@@ -58,7 +58,55 @@ class mpo_block(object):
         MpoSiteT=np.transpose(self.data[site].m, (0,1,3,2))
         self.data[site].update_site(tens_in = MpoSiteT)
 
+ def contract_with_mpo(self, mpo_block, orth_centre=None, prec=1, trunc_mode='fraction'):          
+    print('no') 
+    #default val of orth_centre
+    if orth_centre == None: orth_centre=int(np.ceil(0.5*self.N_sites))
 
+    #Initialize a boolean list (must re-init each time!) 
+    #to keep track which mps sites have been multiplied by the corresponding mpo sites
+    self.is_multiplied=[]
+    for i in range(self.N_sites):
+        self.is_multiplied.append(False)
+
+    if (orth_centre > 0):
+        self.left_sweep_mpo_mpo(mpo_block, orth_centre, prec, trunc_mode) 
+
+
+    if (orth_centre < self.N_sites):
+        self.reverse_mpo_mpo_network(mpo_block) 
+        self.left_sweep_mpo_mpo(mpo_block, self.N_sites - orth_centre + int(orth_centre != 0), prec, trunc_mode)
+        self.reverse_mpo_mpo_network(mpo_block)
+
+ def reverse_mpo_mpo_network(self, mpo_block): 
+
+        self.reverse_mpo() 
+        mpo_block.reverse_mpo() 
+        self.is_multiplied.reverse()    
+    #Canonicalize MPS 
+    #(if Oc=N --> do backward sweep with Oc=0; if Oc=0 --> do backward sweep with Oc=N; else --> do both sweeps)
+    #if (orth_centre > 0): self.canonicalize_mps(0, prec, trunc_mode)
+    #if (orth_centre < self.N_sites): self.canonicalize_mps(self.N_sites, prec, trunc_mode)
+    
+ def left_sweep_mpo_mpo(self, mpo_block, orth_centre, prec, trunc_mode): 
+
+    #print('MULT at site ', 0)
+    #print('tnsm')
+    #print(TensMul(mpo_block.data[0].m, self.data[0].m).shape)
+    self.data[0].update_site(tens_in = TensMul(mpo_block.data[0].m, self.data[0].m))
+    self.is_multiplied[0] = True
+    print('shouldnt see this')
+    for site in range(1,orth_centre):
+        
+        
+        print('MULT & SVD at site ', site)
+
+        if not self.is_multiplied[site]:
+            self.data[site-1].zip_mpo_mpo_sites(self.data[site], mpo_block.data[site], prec, trunc_mode)
+            self.is_multiplied[site] = True
+        else:
+            print('SVD (no mult) at site ', site)
+            self.data[site-1].svd_mpo_site(self.data[site], prec, trunc_mode)
 
 ##########################################################################
 #   Class mps_block   
@@ -144,8 +192,49 @@ class mps_block():
     except err.MpsAppendingError as e:
        print("append_site: ", e.msg)
        sys.exit()
+       
+ def insert_site(self, axis, tensor_to_append):
 
+    try:
+       if len(tensor_to_append.shape) != 3: raise err.MpsSiteInputError
+       #if tensor_to_append.shape[1] != 1: raise err.MpsAppendingError
 
+       #Append a new site
+       self.data.insert(axis,mps_site(tens_in = tensor_to_append))
+       self.N_sites = self.N_sites + 1 
+
+    except err.MpsSiteInputError as e:
+       print("append_site: ", e.msg)
+       sys.exit()
+
+    except err.MpsAppendingError as e:
+       print("append_site: ", e.msg)
+       sys.exit()
+
+ def contract_end(self):
+    ns=self.N_sites
+
+    tens=np.einsum('ijk->j',self.data[ns-1].m)
+    del self.data[ns-1]
+
+    self.N_sites=self.N_sites-1
+    tens=np.einsum('i,jki',tens,self.data[ns-2].m)  
+    tens=np.expand_dims(tens,-1)            
+    self.data[ns-2].update_site(tens_in=tens)
+
+    
+ def readout(self,mpoterm):
+    l=len(mpoterm.data)
+    out=np.einsum('ijk,limn',self.data[l-1].m,mpoterm.data[l-1].m)
+    out=np.einsum('ijklm->ijlm',out)
+    out=np.einsum('ijkl->ik',out)
+    for jj in range(l-1):
+        nout=np.einsum('ijk,limn',self.data[l-2-jj].m,mpoterm.data[l-2-jj].m)
+        nout=np.einsum('ijklm->ijlm',nout)
+        out=np.einsum('imkn,mn',nout,out)   
+    out=np.einsum('ij->j',out)   
+    return out
+           
 
  def copy_mps(self, mps_copy, copy_conj=False): 
 
@@ -192,7 +281,7 @@ class mps_block():
 
  def canonicalize_mps(self, orth_centre, prec, trunc_mode): 
 
-    print('Canonicalizing MPS block')
+    #print('Canonicalizing MPS block')
 
     #Left sweep
     if (orth_centre > 0):
@@ -262,6 +351,7 @@ class mps_block():
     #To perform the right sweep, we reverse mps-mpo network, perform the left sweep, then reverse back
     if (orth_centre < self.N_sites):
         self.reverse_mps_mpo_network(mpo_block) 
+        #print('reversing')
         self.left_sweep_mps_mpo(mpo_block, self.N_sites - orth_centre + int(orth_centre != 0), prec, trunc_mode)
         self.reverse_mps_mpo_network(mpo_block)
 
@@ -272,35 +362,54 @@ class mps_block():
 
 
 
-
  def reverse_mps_mpo_network(self, mpo_block): 
 
     self.reverse_mps() 
     mpo_block.reverse_mpo() 
     self.is_multiplied.reverse()
 
-
-
+ def bonddims(self):
+     bond=[]                
+     for ss in range(self.N_sites):
+          bond.append(self.data[ss].m.shape[2])
+     return bond
+          
+ def totsize(self):
+     size=0
+     for ss in range(self.N_sites):
+         size=self.data[ss].m.shape[0]*self.data[ss].m.shape[1]*self.data[ss].m.shape[2]+size
+     return size     
  def left_sweep_mps_mpo(self, mpo_block, orth_centre, prec, trunc_mode): 
 
+<<<<<<< HEAD
+    #print('MULT at site ', 0)
+
+    self.data[0].update_site(tens_in = TensMul(mpo_block.data[0].m, self.data[0].m))
+    self.is_multiplied[0] = True
+=======
     print('MULT at site ', 0)
  
     #Mult mps-mpo at 1st site (but only if it hasn't been multiplied already during process_mps_mpo_endcap)
     if(self.is_multiplied[0] == False):
        self.data[0].update_site(tens_in = TensMul(mpo_block.data[0].m, self.data[0].m))
        self.is_multiplied[0] = True
+>>>>>>> master
 
     for site in range(1,orth_centre):
-        
-        print('MULT & SVD at site ', site)
-
+        #print(site)
+        #print(self.is_multiplied)
+        #print('MULT & SVD at site ', site)
+        #print(self.data[site].m)
         if not self.is_multiplied[site]:
             self.data[site-1].zip_mps_mpo_sites(self.data[site], mpo_block.data[site], prec, trunc_mode)
             self.is_multiplied[site] = True
         else:
-            print('SVD (no mult) at site ', site)
+            #print('SVD (no mult) at site ', site)
             self.data[site-1].svd_mps_site(self.data[site], prec, trunc_mode)
 
+<<<<<<< HEAD
+ 
+=======
 
 
  def process_mps_mpo_endcap(self, mpo_block):
@@ -332,4 +441,5 @@ class mps_block():
     rh=np.einsum('ij,j',rh,np.einsum('ijk->j',self.data[ns-1].m))
     return rh
 
+>>>>>>> master
 
