@@ -1,8 +1,11 @@
 from scipy.special import gamma
-from cmath import sin, atan, log
-from mpmath import zeta,polygamma,harmonic,euler
+from cmath import sin, atan, log, cos
+from mpmath import zeta,polygamma,harmonic,euler,lerchphi,coth,exp,psi
 from mpmath import gamma as cgamma
-from numpy import array,zeros
+import mpmath as mp
+import scipy
+from numpy import array,zeros,pi,inf
+
 
 def lgam(x):
     return log(cgamma(x))
@@ -72,6 +75,48 @@ def neta_sp_s3(t,T,wc,mu,A):
                     +polygamma(1,(1+b*wc-1j*t*wc)/(b*wc))
                     +polygamma(1,(1+1j*t*wc)/(b*wc)))
             )
+            
+
+def eta_brownian(t,T,w0,al,G):
+    b = 2*w0**2-G**2
+    c = w0**4
+    xi = (4*c-b**2)**0.5
+    vn = 2*T*pi
+    r1 = (b/2 + 1j/2*xi)**0.5
+    r2 = (b/2 - 1j/2*xi)**0.5
+    r1s = (-b/2 + 1j/2*xi)**0.5
+    r2s = (-b/2 - 1j/2*xi)**0.5
+    if t==0:
+        eta = 0
+    else:
+        eta = -2*((-((-1 + coth(r1/(2.*T)))/r1**2) + (exp(1j*r1*t)*(-1 + coth(r1/(2.*T))))/r1**2 - (1 + coth(r2/(2.*T)))/r2**2 + 
+        (1 + coth(r2/(2.*T)))/(exp(1j*r2*t)*r2**2) + t*((-1j*(-1 + coth(r1/(2.*T))))/r1 + 1j*((1 + coth(r2/(2.*T))))/r2))/
+        (4.*xi) + T*(-(-(r2s**2*lerchphi(exp(-(t*vn)),1,(-r1s + vn)/vn))*exp(-t*vn) - 
+        r2s**2*lerchphi(exp(-(t*vn)),1,(r1s + vn)/vn)*exp(-t*vn) + r1s**2*lerchphi(exp(-(t*vn)),1,(-r2s + vn)/vn)*exp(-t*vn) + 
+        r1s**2*lerchphi(exp(-(t*vn)),1,(r2s + vn)/vn)*exp(-t*vn) + 2*r1s**2*log(1-exp(-t*vn)) - 
+        2*r2s**2*log(1-exp(-t*vn)))/(2*r1s**2*(r1s - r2s)*r2s**2*(r1s + r2s)*vn) + 
+        (t*(r2s*polygamma(0,-((-r1s - vn)/vn)) - r2s*polygamma(0,-((r1s - vn)/vn)) - r1s*polygamma(0,-((-r2s - vn)/vn)) + 
+        r1s*polygamma(0,-((r2s - vn)/vn))))/(2.*r1s*r2s*(r1s**2 - r2s**2)*vn) - 
+        (2*euler*r1s**2 - 2*euler*r2s**2 - r2s**2*polygamma(0,-((-r1s - vn)/vn)) - r2s**2*polygamma(0,-((r1s - vn)/vn)) + 
+        r1s**2*polygamma(0,-((-r2s - vn)/vn)) + r1s**2*polygamma(0,-((r2s - vn)/vn)))/(2.*r1s**2*r2s**2*(r1s**2 - r2s**2)*vn)))
+        eta = eta*G*w0**2*al
+    print(t)
+    return eta
+
+#Time integrated part of the auto-correlation function
+def fo(w,T,t,ct=0):
+    #ct determines whether to include (1) counterterms or not (0)
+    if ct==1:
+        fo = w**(-2)*(coth(w/(2*T))*(1-cos(w*t))+1j*(sin(w*t)-w*t))
+    else:
+        fo = ((1-cos(w*t))+1j*(sin(w*t)))
+    return fo
+
+def numint(t,T,nin,ct=0): 
+    numir = scipy.integrate.quad(lambda w: scipy.real(nin(w)*(fo(w,T,t,ct))),0,inf)
+    numii = scipy.integrate.quad(lambda w: scipy.imag(nin(w)*(fo(w,T,t,ct))),0,inf)
+    print(t)
+    return numir[0]+1j*numii[0]
 
 #combines all of above for the general lineshape - still buggy though for some params
 def eta_all(t,T,s,wc,mu,A):
