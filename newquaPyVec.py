@@ -11,30 +11,51 @@ from scipy.interpolate import interp1d
 
 global trot
 
-def mcoeffs(mod,et,dk,dt,ntot):
+def mcoeffs(trott,mod,et,dk,dt,ntot):
     #function to calculate coeffs for a given lineshape et, delta_k_max dk, timestep dt, and number of
     #propagation points ntot
     #mod=1/0 gives modified/standard coeffs
     if mod==0:
-        etab=array([zeros(2*(dk+1)+1,dtype=complex),zeros(2*(dk+1)+1,dtype=complex),zeros((dk+1),dtype=complex)])
-        tb=zeros(2*(dk+2)+1,dtype=complex)
+        if trott==0:
+            etab=array([zeros(2*(dk+1)+1,dtype=complex),zeros(2*(dk+1)+1,dtype=complex),zeros((dk+1),dtype=complex)])
+            tb=zeros(2*(dk+2)+1,dtype=complex)
         
-        for j in range(1,2*(dk+2)+1):
-            tb[j]=et(j*0.5*dt)
-        etab[0][0]=tb[2]
-        etab[1][0]=tb[1]
-        etab[2][0]=tb[1]
+            for j in range(1,2*(dk+2)+1):
+                tb[j]=et(j*0.5*dt)
+                etab[0][0]=tb[2]
+                etab[1][0]=tb[1]
+                etab[2][0]=tb[1]
         
-        for j in range(1,dk+1):
-            #calculating the coefficients by taking finite differences on the lineshape
-            #as detailed in my report
-            etab[0][j]=tb[(2*j+2)]-tb[2*j]-tb[2*j]+tb[(2*j-2)]
-            etab[1][j]=tb[2*j+1]-tb[2*j-1]-tb[2*j]+tb[2*(j-1)]
-            etab[2][j]=tb[(2*j)]-tb[2*j-1]-tb[2*j-1]+tb[2*(j-1)]
+            for j in range(1,dk+1):
+                #calculating the coefficients by taking finite differences on the lineshape
+                #as detailed in my report
+                etab[0][j]=tb[(2*j+2)]-tb[2*j]-tb[2*j]+tb[(2*j-2)]
+                etab[1][j]=tb[2*j+1]-tb[2*j-1]-tb[2*j]+tb[2*(j-1)]
+                etab[2][j]=tb[(2*j)]-tb[2*j-1]-tb[2*j-1]+tb[2*(j-1)]
             
-        for j in range(1,dk+3):
-            etab[0][dk+j]=etab[0][dk]
-            etab[1][dk+j]=etab[1][dk]
+            for j in range(1,dk+3):
+                etab[0][dk+j]=etab[0][dk]
+                etab[1][dk+j]=etab[1][dk]
+        else:
+            etab=array([zeros(2*(dk+1)+1,dtype=complex),zeros(2*(dk+1)+1,dtype=complex),zeros((dk+1),dtype=complex)])
+            tb=zeros(2*(dk+2)+1,dtype=complex)
+        
+            for j in range(1,2*(dk+2)+1):
+                tb[j]=et(j*0.5*dt)
+                etab[0][0]=tb[2]
+                etab[1][0]=tb[2]
+                etab[2][0]=tb[2]
+        
+            for j in range(1,dk+1):
+                #calculating the coefficients by taking finite differences on the lineshape
+                #as detailed in my report
+                etab[0][j]=tb[(2*j+2)]-tb[2*j]-tb[2*j]+tb[(2*j-2)]
+                etab[1][j]=tb[(2*j+2)]-tb[2*j]-tb[2*j]+tb[(2*j-2)]
+                etab[2][j]=tb[(2*j+2)]-tb[2*j]-tb[2*j]+tb[(2*j-2)]
+            
+            for j in range(1,dk+3):
+                etab[0][dk+j]=etab[0][dk]
+                etab[1][dk+j]=etab[1][dk]
     else:
         etab=array([zeros((dk+1+ntot+dk),dtype=complex),zeros((dk+1+ntot+dk),dtype=complex),zeros((dk+1),dtype=complex)])
         #etab will be the table of makri coeffecients that the influencece functional uses

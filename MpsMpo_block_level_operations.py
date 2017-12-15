@@ -6,6 +6,7 @@ import numpy as np
 import ErrorHandling as err
 from tensor_algebra import *
 from MpsMpo_site_level_operations import mps_site, mpo_site
+import multiprocessing as mp
 
 
 ##########################################################################
@@ -173,7 +174,7 @@ class mps_block():
        #Create a new mps_site
        self.data.append(mps_site(local_dim, west_dim, east_dim))
 
-
+ 
 
  def append_site(self, tensor_to_append):
 
@@ -225,6 +226,8 @@ class mps_block():
     
  def readout(self,mpoterm):
     l=len(mpoterm.data)
+    print(np.shape(self.data[l-1].m))
+    print(np.shape(mpoterm.data[l-1].m))
     out=np.einsum('ijk,limn',self.data[l-1].m,mpoterm.data[l-1].m)
     out=np.einsum('ijklm->ijlm',out)
     out=np.einsum('ijkl->ik',out)
@@ -234,7 +237,19 @@ class mps_block():
         out=np.einsum('imkn,mn',nout,out)   
     out=np.einsum('ij->j',out)   
     return out
-           
+
+ def readout2(self):
+    l=len(self.data)
+    if l==1:
+        out=np.einsum('ijk->i',self.data[0].m)
+        return out
+        
+    out=np.einsum('ijk->j',self.data[l-1].m)
+    for jj in range(l-2):
+        out=np.dot(np.einsum('ijk->jk',self.data[l-2-jj].m),out)
+    out=np.dot(np.einsum('ijk->ik',self.data[0].m),out)  
+    return out
+             
 
  def copy_mps(self, mps_copy, copy_conj=False): 
 
@@ -309,26 +324,26 @@ class mps_block():
 
     for site in range(1,orth_centre):
         self.data[site-1].svd_mps_site(self.data[site], prec, trunc_mode)
+        
+ def delete_site(self,site):
+     del self.data[site]
+     self.N_sites=self.N_sites-1
+     return 0
 
-
-
+ def splitblock(self,split_centre):
+     
+     return 0
 
  ########## Modes: 'accuracy', 'chi', 'fraction' ################################
-
- ##### Set is_endcap_present = False for Growth stage, is_endcap_present = True for post-Growth stage #####
 
  #Note the term "+ int(orth_centre != 0)" --> 
  #on [R->L] sweep we reverse Oc to N - Oc + 1, so that all bonds have been through svd 
  #(in particular, the bond to the right of Oc, which is skipped if we reverse Oc to N - Oc instead)
  #If Oc=0 --> reverse to N - Oc instead, cause there's no bond (and no sites) to the right of Oc (so nothing to svd)
- def contract_with_mpo(self, mpo_block, orth_centre=None, prec=0.0001, trunc_mode='accuracy', is_endcap_present=False):          
+ def contract_with_mpo(self, mpo_block, orth_centre=None, prec=0.0001, trunc_mode='accuracy'):          
 
     #default val of orth_centre
     if orth_centre == None: orth_centre=int(np.ceil(0.5*self.N_sites))
-
-    #if present, process the MpsEndCap first before starting Mps-Mpo contraction
-    if(is_endcap_present == True):
-       self.process_mps_mpo_endcap(mpo_block)
 
     #Initialize a boolean list (must re-init each time!) 
     #to keep track which mps sites have been multiplied by the corresponding mpo sites
@@ -336,30 +351,58 @@ class mps_block():
     for i in range(self.N_sites):
         self.is_multiplied.append(False)
 
-    #if we had to process the MpsEndCap, it means the last site of the Mps has already been multiplied by an Mpo
-    #thus set is_multiplied = True for the last Mps site
-    if(is_endcap_present == True):
-       self.is_multiplied[self.N_sites-1] = True
-
-    ########## sweep through mps-mpo network, contracting them site-by-site && doing SVD ##################
-
-    #Left-to-Right sweep (matters only if the orth centre is after site=0)
     if (orth_centre > 0):
         self.left_sweep_mps_mpo(mpo_block, orth_centre, prec, trunc_mode) 
 
-    #Right-to-Left sweep (matters only if the orth centre is before site=N-1)
-    #To perform the right sweep, we reverse mps-mpo network, perform the left sweep, then reverse back
+
     if (orth_centre < self.N_sites):
         self.reverse_mps_mpo_network(mpo_block) 
         #print('reversing')
         self.left_sweep_mps_mpo(mpo_block, self.N_sites - orth_centre + int(orth_centre != 0), prec, trunc_mode)
         self.reverse_mps_mpo_network(mpo_block)
-
+    '''
+    cop=mps_block(1,1,1)
+    self.copy_mps(cop)
+    
+    def fu(o_centre):
+        cop.left_sweep_mps_mpo(mpo_block, o_centre, prec, trunc_mode) 
+    arg1=(mpo_block,orth_centre, prec, trunc_mode)
+    arg2=(mpo_block,orth_centre, prec, trunc_mode)
+    pool=mp.Pool(2)
+    pool.starmap(cop.left_sweep_mps_mpo,[arg1,arg2])
+    pool.close()
+    pool.join()
+    '''
+    
     #Canonicalize MPS 
     #(if Oc=N --> do backward sweep with Oc=0; if Oc=0 --> do backward sweep with Oc=N; else --> do both sweeps)
     if (orth_centre > 0): self.canonicalize_mps(0, prec, trunc_mode)
     if (orth_centre < self.N_sites): self.canonicalize_mps(self.N_sites, prec, trunc_mode)
+ 
+ def contract_with_mpo2(self, mpo_block, orth_centre=None, prec=0.0001, trunc_mode='accuracy'):          
 
+    
+    if (orth_centre > 0): self.canonicalize_mps(0, prec, trunc_mode)
+    if (orth_centre < self.N_sites): self.canonicalize_mps(self.N_sites, prec, trunc_mode)
+    
+ def left_sweep_mps_mpo(self, mpo_block, orth_centre, prec, trunc_mode): 
+
+    #print('MULT at site ', 0)
+
+    self.data[0].update_site(tens_in = TensMul(mpo_block.data[0].m, self.data[0].m))
+    self.is_multiplied[0] = True
+
+    for site in range(1,orth_centre):
+        #print(site)
+        #print(self.is_multiplied)
+        #print('MULT & SVD at site ', site)
+        #print(self.data[site].m)
+        if not self.is_multiplied[site]:
+            self.data[site-1].zip_mps_mpo_sites(self.data[site], mpo_block.data[site], prec, trunc_mode)
+            self.is_multiplied[site] = True
+        else:
+            #print('SVD (no mult) at site ', site)
+            self.data[site-1].svd_mps_site(self.data[site], prec, trunc_mode)
 
 
  def reverse_mps_mpo_network(self, mpo_block): 
@@ -379,67 +422,8 @@ class mps_block():
      for ss in range(self.N_sites):
          size=self.data[ss].m.shape[0]*self.data[ss].m.shape[1]*self.data[ss].m.shape[2]+size
      return size     
- def left_sweep_mps_mpo(self, mpo_block, orth_centre, prec, trunc_mode): 
-
-<<<<<<< HEAD
-    #print('MULT at site ', 0)
-
-    self.data[0].update_site(tens_in = TensMul(mpo_block.data[0].m, self.data[0].m))
-    self.is_multiplied[0] = True
-=======
-    print('MULT at site ', 0)
- 
-    #Mult mps-mpo at 1st site (but only if it hasn't been multiplied already during process_mps_mpo_endcap)
-    if(self.is_multiplied[0] == False):
-       self.data[0].update_site(tens_in = TensMul(mpo_block.data[0].m, self.data[0].m))
-       self.is_multiplied[0] = True
->>>>>>> master
-
-    for site in range(1,orth_centre):
-        #print(site)
-        #print(self.is_multiplied)
-        #print('MULT & SVD at site ', site)
-        #print(self.data[site].m)
-        if not self.is_multiplied[site]:
-            self.data[site-1].zip_mps_mpo_sites(self.data[site], mpo_block.data[site], prec, trunc_mode)
-            self.is_multiplied[site] = True
-        else:
-            #print('SVD (no mult) at site ', site)
-            self.data[site-1].svd_mps_site(self.data[site], prec, trunc_mode)
-
-<<<<<<< HEAD
- 
-=======
 
 
- def process_mps_mpo_endcap(self, mpo_block):
-
-    #Contract the last Mps site with the last "cap" site of Mpo, then remove the local dim
-    MpsEndCap_tmp = TensMul(mpo_block.data[self.N_sites-1].m, self.data[self.N_sites-1].m)
-    MpsEndCap = MpsEndCap_tmp[0,:,:]
-
-    #Contract mps-mpo at site=N_sites-2 
-    tmpMpsMpo = TensMul(mpo_block.data[self.N_sites-2].m, self.data[self.N_sites-2].m)
-    #Absorb MpsEndCap into mps-mpo product at N_sites-2
-    tmpMpsMpo = np.einsum('imn,nk->imk', tmpMpsMpo, MpsEndCap)
-
-    #Write tmpMpsMpo to the last site of Mps
-    self.data[self.N_sites-2].update_site(tens_in = tmpMpsMpo)
-    #Cut the number of Mps sites after we've absorbed the MpsEndCap
-    self.N_sites = self.N_sites-1
-
-
-
- def readout(self):
-
-    ns=self.N_sites
-    rh=np.einsum('ijk->ik',self.data[0].m)
-
-    for jj in range(1,ns-1):
-       rh=np.einsum('ij,jk',rh,np.einsum('ijk->jk',self.data[jj].m))   
-
-    rh=np.einsum('ij,j',rh,np.einsum('ijk->j',self.data[ns-1].m))
-    return rh
-
->>>>>>> master
+for jj in range(1,1):
+    print(jj)
 
