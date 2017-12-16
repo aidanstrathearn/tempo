@@ -12,6 +12,8 @@ from math import fmod
 from tensor_algebra import *
 import os.path
 from scipy.linalg import expm
+import numpy.fft as ft
+import scipy.fftpack as ftp
 
 def datload(filename):
     #function to unpickle data files and output them as a list
@@ -142,14 +144,14 @@ def freeprop(ham,dt,op=[],lind=[]):
     return kprop.T
 
 
-def sitetensor(eigl,dk,dkm,k,n,ham,dt,op=[]):
+def sitetensor(eigl,dk,dkm,k,n,ham,dt,op=[],lind=[]):
     #constructs the rank-4 tensors sites that make up the network 
     #initialise rank-4 tensor of zeros
     l=len(eigl)
     tab=zeros((l**2,l**2,l**2,l**2),dtype=complex)
     #construct the bare rank-2 influence functional factor
     if dk==1:
-        iffactor=itab(eigl,1,k,n,dkm)*itab(eigl,0,k,n,dkm)*freeprop(ham,dt,op)
+        iffactor=itab(eigl,1,k,n,dkm)*itab(eigl,0,k,n,dkm)*freeprop(ham,dt,op,lind)
     else:
         iffactor=itab(eigl,dk,k,n,dkm)
     
@@ -174,10 +176,9 @@ def tempo_mpoblock(eigl,ham,dt,dkm,k,n):
             blk.append_site(sitetensor(eigl,ii,dkm,k,n,ham,dt))
     return blk
 
-def tempo(eigl,eta,irho,ham,dt,ntot,dkm,p,c=1,mod=0,oplis=[],datf=None,savemps=None):
+def tempo(eigl,irho,ham,dt,ntot,dkm,p,mod=0,oplis=[],lindl=[],datf=None,savemps=None):
     edge=np.expand_dims(np.eye(len(eigl)**2),1)
     t0=time.time()
-    svds=['fraction','accuracy','chi']
     l=len(eigl)
     precision=10**(-0.1*p)
     global ctab
@@ -196,6 +197,8 @@ def tempo(eigl,eta,irho,ham,dt,ntot,dkm,p,c=1,mod=0,oplis=[],datf=None,savemps=N
     mps=mps_block(0,0,0)
     mps.insert_site(0,rho)
     propmpo=tempo_mpoblock(eigl,ham,dt,1,1,ntot)
+    if len(lindl)>0:
+        propmpo.data[0].update_site(tens_in=sitetensor(eigl,1,1,1,ntot,ham,dt,lind=lindl))
     jj0=1
     
     if type(datf)==str and type(savemps)==int:
@@ -256,13 +259,13 @@ def tempo(eigl,eta,irho,ham,dt,ntot,dkm,p,c=1,mod=0,oplis=[],datf=None,savemps=N
             datfile.flush()
           
         if len(oplis)>0 and jj==oplis[0][0]:
-            propmpo.data[0].update_site(tens_in=sitetensor(eigl,1,jj,jj,ntot+2,ham,dt,oplis[0][1]))
+            propmpo.data[0].update_site(tens_in=sitetensor(eigl,1,jj,jj,ntot+2,ham,dt,oplis[0][1],lind=lindl))
             del oplis[0]
         else:
-            propmpo.data[0].update_site(tens_in=sitetensor(eigl,1,jj,jj,ntot+2,ham,dt))
+            propmpo.data[0].update_site(tens_in=sitetensor(eigl,1,jj,jj,ntot+2,ham,dt,lind=lindl))
         
         #contract with propagation mpo and insert the new end site, growing the MPS by one site
-        mps.contract_with_mpo(propmpo,prec=precision,trunc_mode=svds[c])
+        mps.contract_with_mpo(propmpo,prec=precision,trunc_mode='accuracy')
         mps.insert_site(0,edge)
         
         if jj<dkm:
@@ -287,6 +290,39 @@ def tempo(eigl,eta,irho,ham,dt,ntot,dkm,p,c=1,mod=0,oplis=[],datf=None,savemps=N
     #if type(datf)==str: datfile.close()
     return datlis 
 
+def spec(eigl,irho,ham,dt,ntot,dkm,p,opt,op1,op2):
+    dat=tempo(eigl,irho,ham,dt,ntot,dkm,p,oplis=[[opt,op1]])
+    
+    dat=dat[(opt):]
+    dim=len(ham)
+    op2=array(op2)
+    op1=array(op1)
+    lop2=kron(op2.T,identity(dim))
+    lop1=kron(op1.T,identity(dim))
+    
+    dat[0][1]=np.dot(lop1,dat[0][1])
+    for eld in dat:
+        eld[1]=np.dot(lop2,eld[1])[0]+np.dot(lop2,eld[1])[3]
+        eld[0]=eld[0]-opt*dt
+    for eld in dat:
+        eld[1]=eld[1]-dat[-1][1]
+    
+    datr=np.copy(dat[1:])
+    for eld in datr:
+        eld[0]=-eld[0]
+        eld[1]=eld[1].conjugate()
+    datr=datr[::-1]
+    
+    fdat=[*datr,*dat]
+    print(array(fdat).T)
+    fourdat=ftp.dct((array(fdat).T)[1])
+    print(np.shape(fourdat))
+    freq = (array(fdat).T)[0]
+    for f in range(len(freq)):
+        freq[f]=1/(freq[f]+0.00001)
+    print(freq)
+    return [fourdat,freq]
+    
 hamil=[[0,1],
        [1,0]] 
 
@@ -294,37 +330,39 @@ hamil=[[0,1],
 
 irho=[[1,0],[0,0]]
 
-kk=7
+kk=15
 pp=50
-cc=5
-
-sigp=[[0,1],[0,0]]
-sigm=[[0,0],[1,0]]
+cc=10
+sigz=array([[1,0],[0,-1]])
+sigx=array([[0,1],[1,0]])
+isigy=array([[0,1],[-1,0]])
+sigp=(sigx+isigy)
+sigm=(sigx-isigy)
 idd=[[1,0],[0,1]]
 oper2=kron(idd,idd)
 oper=kron(idd,idd)
 daa=[]
 def eta1(t):
     return ln.eta_all(t,0.2,1.00001,7.5,0,0.5*0.01*cc)
-def eta2(t):
-    return ln.eta_all(t,0.2,1.00001,7.5,0,0.5*0.01*cc)
-eigs=[[[1,-1],[1,-1]],[eta1,eta2]]
-def eta1c(tc,t):
-    if t<tc:
-        return eta1(t)
-    return eta1(tc)+(t-tc)*(eta1(tc+delt)-eta1(tc))/delt
+
+eigs=[[[1,-1]],[eta1]]
+
            
 dkmax=kk
                 
-delt=0.25
-nt=150
+delt=0.2
+nt=200
 #nt=int(np.ceil(2/delt))
 #print(nt)
 #qp.ctab=qp.mcoeffs(0,eta1,kk,delt,nt)
 name="check2coup"+str(cc)+"_dkm"+str(dkmax)+"_prec"+str(pp)+".pickle"
-daa.append(tempo(eigs,eta1,irho,hamil,delt,nt,dkmax,pp,oplis=[[60,idd]]))
-#daa.append(tempo(eigs,eta1,irho,hamil,delt,nt,dkmax,pp))
+#daa.append(tempo(eigs,eta1,irho,hamil,delt,nt,dkmax,pp,oplis=[[60,idd]]))
+daa.append(spec(eigs,irho,hamil,delt,nt,dkmax,pp,50,sigp,sigm))
 
+def eta1c(tc,t):
+    if t<tc:
+        return eta1(t)
+    return eta1(tc)+(t-tc)*(eta1(tc+delt)-eta1(tc))/delt
 def dep(s,ti):
     return 2.7182818284590452353602874713527**(-4*eta1(ti).real-1j*4*(eta1(ti+s)-eta1(ti)-eta1(s)).imag).real
 
@@ -347,17 +385,18 @@ ddd=[]
 tt=[]
 #d2=[]
 print(len(daa))
-for jj in range(0,len(daa[0])-1):
+for jj in range(0,1):
     
     if jj==jj:
-        t.append(daa[0][jj][0])
-        mult=np.dot(daa[0][jj][1],oper2.T)
-        d.append(2*(mult[0].real-mult[3].real))
+        #t.append(daa[0][jj][0])
+        #mult=np.dot(daa[0][jj][1],oper2.T)
+        
+        d=daa[0][1].real
         #mult=np.dot(daa[1][jj][1],oper2.T)
         #dd.append((mult[0].real-mult[3].real))
         #mult=np.dot(daa[2][jj][1],oper2.T)
         #ddd.append((mult[0].real-mult[3].real))
-        tt.append((jj)*delt)
+        t=daa[0][0].real
         #dd.append(depc(kk*delt,(60)*delt,daa[0][jj][0]-60*delt))
         #mult=np.dot(mult,oper2)
         #print(2*(mult[1].real))
