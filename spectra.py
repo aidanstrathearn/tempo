@@ -16,6 +16,8 @@ from numpy import array,zeros,pi,inf
 
 def J_udbrownian(w,w0,G,al):
     return al/pi*G*w0**2*w/((w0**2-w**2)**2+G**2*w**2)
+def J_odbrownian(w,wc,al):
+    return al/pi*wc*w/(w**2+wc**2)
 
 def J_g(w,T,s,wc,A):
     return A*w**s*exp(-w/wc)
