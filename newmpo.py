@@ -6,7 +6,7 @@ import lineshapes as ln
 import numpy as np
 import pickle
 import time
-from numpy import linalg, zeros, identity, kron, array, ones, exp
+from numpy import linalg, zeros, identity, kron, array, ones, exp, trace, append, copy, concatenate
 import matplotlib.pyplot as plt
 from math import fmod
 from tensor_algebra import *
@@ -14,6 +14,7 @@ import os.path
 from scipy.linalg import expm
 import numpy.fft as ft
 import scipy.fftpack as ftp
+import qutip
 
 def datload(filename):
     #function to unpickle data files and output them as a list
@@ -147,7 +148,7 @@ def freeprop(ham,dt,op=[],lind=[]):
 def sitetensor(eigl,dk,dkm,k,n,ham,dt,op=[],lind=[]):
     #constructs the rank-4 tensors sites that make up the network 
     #initialise rank-4 tensor of zeros
-    l=len(eigl)
+    l=len(eigl[0][0])
     tab=zeros((l**2,l**2,l**2,l**2),dtype=complex)
     #construct the bare rank-2 influence functional factor
     if dk==1:
@@ -177,9 +178,11 @@ def tempo_mpoblock(eigl,ham,dt,dkm,k,n):
     return blk
 
 def tempo(eigl,irho,ham,dt,ntot,dkm,p,mod=0,oplis=[],lindl=[],datf=None,savemps=None):
-    edge=np.expand_dims(np.eye(len(eigl)**2),1)
+    
     t0=time.time()
-    l=len(eigl)
+    l=len(eigl[0][0])
+    edge=np.expand_dims(np.eye(l**2),1)
+    
     precision=10**(-0.1*p)
     global ctab
     ctab=[]
@@ -187,12 +190,16 @@ def tempo(eigl,irho,ham,dt,ntot,dkm,p,mod=0,oplis=[],lindl=[],datf=None,savemps=
         ctab.append(mcoeffs(mod,etaf,dkm,dt,ntot))
     
     rho=np.array(irho).reshape(l**2)
-    datlis=[[0,rho]]
+    
+    
     if len(oplis)>0 and oplis[0][0]==0:
         oper=kron(oplis[0][1].T,identity(l))
-        rho=np.dot(rho,oper)
-        del oplis[0]    
+        rho=np.dot(oper,rho)
+        del oplis[0]  
+    datlis=[[0,rho]]
+    
     rho=np.dot(rho,freeprop(ham,0.5*dt))*itab(eigl,0,1,ntot,ntot)[0][:]
+    
     rho=np.expand_dims(np.expand_dims(rho,-1),-1)
     mps=mps_block(0,0,0)
     mps.insert_site(0,rho)
@@ -244,7 +251,6 @@ def tempo(eigl,irho,ham,dt,ntot,dkm,p,mod=0,oplis=[],lindl=[],datf=None,savemps=
     for jj in range(jj0,ntot+1):
         print("\npoint: "+str(jj)+" of "+str(ntot))
         ttt=time.time()
-        
         rhoN=mps.readout2()
         datlis.append([jj*dt,np.dot(rhoN,freeprop(ham,0.5*dt))])
         
@@ -253,16 +259,20 @@ def tempo(eigl,irho,ham,dt,ntot,dkm,p,mod=0,oplis=[],lindl=[],datf=None,savemps=
                 mpsfile=open('mps_'+datf,"wb")
                 pickle.dump(mps,mpsfile)
                 pickle.dump(jj,mpsfile)
-                mpsfile.close()  
+                mpsfile.close()
+                print('mps saved')
                 
             pickle.dump([jj*dt,np.dot(rhoN,freeprop(ham,0.5*dt))],datfile)
             datfile.flush()
           
         if len(oplis)>0 and jj==oplis[0][0]:
-            propmpo.data[0].update_site(tens_in=sitetensor(eigl,1,jj,jj,ntot+2,ham,dt,oplis[0][1],lind=lindl))
+            propmpo.data[0].update_site(tens_in=sitetensor(eigl,1,jj,jj,ntot+1,ham,dt,oplis[0][1],lind=lindl))
+            op=array(oplis[0][1])
+            op=kron(op.T,identity(l))
+            datlis[-1][1]=np.dot(op,datlis[-1][1])
             del oplis[0]
         else:
-            propmpo.data[0].update_site(tens_in=sitetensor(eigl,1,jj,jj,ntot+2,ham,dt,lind=lindl))
+            propmpo.data[0].update_site(tens_in=sitetensor(eigl,1,jj,jj,ntot+1,ham,dt,lind=lindl))
         
         #contract with propagation mpo and insert the new end site, growing the MPS by one site
         mps.contract_with_mpo(propmpo,prec=precision,trunc_mode='accuracy')
@@ -288,10 +298,25 @@ def tempo(eigl,irho,ham,dt,ntot,dkm,p,mod=0,oplis=[],lindl=[],datf=None,savemps=
         
     print('\ntotal time: ' + str(time.time()-t0))
     #if type(datf)==str: datfile.close()
-    return datlis 
+    return datlis
 
-def spec(eigl,irho,ham,dt,ntot,dkm,p,opt,op1,op2):
-    dat=tempo(eigl,irho,ham,dt,ntot,dkm,p,oplis=[[opt,op1]])
+def opdat(op,dat):
+    dim=len(op)
+    lop=kron(op.T,identity(dim))
+    tl=[]
+    dl=[]
+    for el in dat:
+        temp=copy(array(np.dot(lop,el[1])))
+        temp=temp.reshape((dim,dim))
+        temp=temp.trace()
+        tl.append(el[0])
+        dl.append(temp)
+    #plt.plot(tl,dl)
+    
+    return array([tl,dl])
+        
+def spec(eigl,irho,ham,dt,ntot,dkm,p,opt,op1,op2,lind):
+    dat=tempo(eigl,irho,ham,dt,ntot,dkm,p,oplis=[[opt,op1]],lindl=lind)
     
     dat=dat[(opt):]
     dim=len(ham)
@@ -304,100 +329,147 @@ def spec(eigl,irho,ham,dt,ntot,dkm,p,opt,op1,op2):
     for eld in dat:
         eld[1]=np.dot(lop2,eld[1])[0]+np.dot(lop2,eld[1])[3]
         eld[0]=eld[0]-opt*dt
-    for eld in dat:
-        eld[1]=eld[1]-dat[-1][1]
+    #for eld in dat:
+    #    eld[1]=eld[1]-dat[-1][1]
     
+    '''
     datr=np.copy(dat[1:])
     for eld in datr:
         eld[0]=-eld[0]
         eld[1]=eld[1].conjugate()
     datr=datr[::-1]
-    
-    fdat=[*datr,*dat]
-    print(array(fdat).T)
-    fourdat=ftp.dct((array(fdat).T)[1])
-    print(np.shape(fourdat))
-    freq = (array(fdat).T)[0]
-    for f in range(len(freq)):
-        freq[f]=1/(freq[f]+0.00001)
-    print(freq)
-    return [fourdat,freq]
-    
-hamil=[[0,1],
-       [1,0]] 
+    '''
+    #fdat=[*datr,*dat]
+    #print(array(fdat).T)
+    fourdat=ft.fft((array(dat).T)[1])
+    #freq,fourdat=qutip.spectrum_correlation_fft((array(dat).T)[0],(array(dat).T)[1])
+    freq=ft.fftfreq((array(dat).T)[0].shape[-1],dt)
+    #freq=2*3.1415269*freq
+    #print(np.shape(fourdat))
+    #freq = (array(fdat).T)[0]
+    #for f in range(len(freq)):
+    #    freq[f]=1/(freq[f]+0.00001)
+    #print(freq)
+    #print(dat)
+    return [dat,[freq,fourdat]]
+
+def indbos(eta,t):   
+    return 2.7182818284590452353602874713527**(-4*eta(t).real)
+
+def ib_sigpsigm(eta,s,ti):
+    return (2.7182818284590452353602874713527**(-4*eta(ti).real-1j*4*(eta(ti+s)
+                                                      -eta(ti)-eta(s)).imag)).conjugate() 
+def eta_cut(eta,tc,dt,T):
+    if T<tc:
+        return eta
+    else:
+        def etac(t):
+            return eta(tc)+(t-tc)*(eta(tc+dt)-eta(tc))/dt
+        return etac
+#hamil=[[1,0],
+#       [0,-1]] 
 
 
 
-irho=[[1,0],[0,0]]
 
-kk=15
-pp=50
-cc=10
 sigz=array([[1,0],[0,-1]])
 sigx=array([[0,1],[1,0]])
-isigy=array([[0,1],[-1,0]])
-sigp=(sigx+isigy)
-sigm=(sigx-isigy)
-idd=[[1,0],[0,1]]
-oper2=kron(idd,idd)
-oper=kron(idd,idd)
-daa=[]
+sigy=array([[0,-1j],[1j,0]])
+sigp=0.5*(sigx+1j*sigy)
+sigm=0.5*(sigx-1j*sigy)
+idd=array([[1,0],[0,1]])
+
+eps=0
+v=1
+hamil=eps*sigz+v*sigx
+
+sz=1
+sx=0
+sy=0
+irho=0.5*(idd+sz*sigz+sy*sigy+sx*sigx)
+
+kk=50
+pp=50
+cc=1
 def eta1(t):
-    return ln.eta_all(t,0.2,1.00001,7.5,0,0.5*0.01*cc)
-
+    return ln.eta_all(t,0.2,3,7.5,0,0.5*0.5*0.01*cc)
 eigs=[[[1,-1]],[eta1]]
+         
+dkmax=100    
+delt=0.05
+nt=45
+optime=20
+#name="supohmtest_"+str(cc)+"_dkm"+str(dkmax)+"_prec"+str(pp)+".pickle"
 
-           
-dkmax=kk
-                
-delt=0.2
-nt=200
-#nt=int(np.ceil(2/delt))
-#print(nt)
-#qp.ctab=qp.mcoeffs(0,eta1,kk,delt,nt)
-name="check2coup"+str(cc)+"_dkm"+str(dkmax)+"_prec"+str(pp)+".pickle"
-#daa.append(tempo(eigs,eta1,irho,hamil,delt,nt,dkmax,pp,oplis=[[60,idd]]))
-daa.append(spec(eigs,irho,hamil,delt,nt,dkmax,pp,50,sigp,sigm))
+mkov=1
+dat=tempo(eigs,irho,hamil,delt,nt,dkmax,pp,mod=0,oplis=[[optime,sigp]],lindl=[[mkov*0.1,sigp],[mkov*0.1*(1+1/1),sigm]],datf=None,savemps=None)
+#spec(eigl,irho,ham,dt,ntot,dkm,p,opt,op1,op2,lind)
+#daa.append(spec(eigs,irho,hamil,delt,nt,dkmax,pp,0,sigm,sigp,lind=[[0,sigm],[0,sigp]]))
+#daa.append(spec(eigs,irho,hamil,delt,nt,dkmax,pp,300,sigp,sigm,lind=[[0.1,sigm],[0.5,sigp]]))
+xdat=opdat(sigm,dat[optime:])
+xdat[1]=xdat[1]-xdat[1][-1]
+predat=opdat(sigz,dat[:optime])
+indat=[]
+#for tt in xdat[0]:
+#    indat.append(ib_sigpsigm(eta1,delt*optime,tt-delt*optime))
 
-def eta1c(tc,t):
-    if t<tc:
-        return eta1(t)
-    return eta1(tc)+(t-tc)*(eta1(tc+delt)-eta1(tc))/delt
-def dep(s,ti):
-    return 2.7182818284590452353602874713527**(-4*eta1(ti).real-1j*4*(eta1(ti+s)-eta1(ti)-eta1(s)).imag).real
+#fr0,fd0=qutip.spectrum_correlation_fft(xdat[0]-delt*optime,xdat[1])
+fourdat1=ft.fft(xdat[1])
+freq1=ft.fftfreq(xdat[0].shape[-1],delt)
+for jj in freq1:
+    print(jj)
+if len(freq1) % 2 == 0:
+    print('doing it')
+    freq1=concatenate((freq1[len(freq1)/2:],freq1[:len(freq1)/2]))
+    fourdat1=concatenate((fourdat1[len(fourdat1)/2:],fourdat1[:len(fourdat1)/2]))
+for jj in freq1:
+    print(jj)
+    #print(freq1)
+print(len(freq1))
+#fourdat2=ft.fft(indat)
+#freq2=ft.fftfreq(xdat[0].shape[-1],delt)
 
-def depc(tc,s,ti):
-    return (2.7182818284590452353602874713527**(-4*eta1c(tc,ti).real-1j*4*(eta1c(tc,ti+s)-eta1c(tc,ti)-eta1c(tc,s)).imag)).real
+plt.plot(predat[0],predat[1])
+#plt.plot(xdat[0],xdat[1])
+plt.plot(2*3.1415926*freq1,2*fourdat1.real)
+#plt.plot(xdat[0],indat)
+plt.plot(xdat[0],xdat[1])
+#plt.plot(xdat[0],indat)
+plt.show()
 
-def dep2(s,ti):
+
+
+
+#def depc(tc,s,ti):
+#    return (2.7182818284590452353602874713527**(-4*eta1c(tc,ti).real-1j*4*(eta1c(tc,ti+s)-eta1c(tc,ti)-eta1c(tc,s)).imag)).real
+
+ 
     
-    return 2.7182818284590452353602874713527**(-4*eta1(ti).real)
-
-
-def dep2c(s,ti):
-    return 2.7182818284590452353602874713527**(-4*eta1c(s,ti).real)
-
-#print(dep(4))     
+'''
 t=[]
 d=[]
 dd=[]
 ddd=[]
 tt=[]
 #d2=[]
-print(len(daa))
-for jj in range(0,1):
+#print(daa[0][jj])
+
+for jj in range(0,len(daa[0][0])-1):
     
     if jj==jj:
         #t.append(daa[0][jj][0])
         #mult=np.dot(daa[0][jj][1],oper2.T)
-        
-        d=daa[0][1].real
+        #print(daa[0][jj][1].real-daa[0][jj][3].real)
+        d.append(daa[0][0][jj][1].real)
+        t.append(daa[0][0][jj][0].real)
+        #d=daa[0][1]
+        #t=daa[0][0]
         #mult=np.dot(daa[1][jj][1],oper2.T)
         #dd.append((mult[0].real-mult[3].real))
         #mult=np.dot(daa[2][jj][1],oper2.T)
         #ddd.append((mult[0].real-mult[3].real))
-        t=daa[0][0].real
-        #dd.append(depc(kk*delt,(60)*delt,daa[0][jj][0]-60*delt))
+        
+        #dd.append(dep2c(kk*delt,daa[0][jj][0].real))
         #mult=np.dot(mult,oper2)
         #print(2*(mult[1].real))
         
@@ -412,15 +484,21 @@ for jj in range(0,1):
         #mult=np.dot(oper2,daa[1][jj][1])
         #d2.append(2*(mult[0]+mult[3]).real)  
 
-plt.plot(t,d)
+plt.plot(array(daa[0][0]).T[0],array(daa[0][0]).T[1])
+#plt.plot(t,d)
 #plt.plot(t,dd)
 #plt.plot(t,ddd)
 #plt.plot(tt,dd)
 axes = plt.gca()
 #axes.set_xlim([-10,10])
-#axes.set_ylim([0,1])
+#axes.set_ylim([-100,100])
 #plt.plot(t,d2)
 plt.show()
+'''
+
+
+
+
 
 '''   
 xlis=[]
