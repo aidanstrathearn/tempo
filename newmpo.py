@@ -184,6 +184,7 @@ def tempo(eigl,irho,ham,dt,ntot,dkm,p,mod=0,oplis=[],lindl=[],datf=None,savemps=
     edge=np.expand_dims(np.eye(l**2),1)
     
     precision=10**(-0.1*p)
+    
     global ctab
     ctab=[]
     for etaf in eigl[1]:
@@ -191,18 +192,17 @@ def tempo(eigl,irho,ham,dt,ntot,dkm,p,mod=0,oplis=[],lindl=[],datf=None,savemps=
     
     rho=np.array(irho).reshape(l**2)
     
-    
     if len(oplis)>0 and oplis[0][0]==0:
         oper=kron(oplis[0][1].T,identity(l))
         rho=np.dot(oper,rho)
         del oplis[0]  
     datlis=[[0,rho]]
     
-    rho=np.dot(rho,freeprop(ham,0.5*dt))*itab(eigl,0,1,ntot,ntot)[0][:]
-    
+    rho=np.dot(rho,freeprop(ham,0.5*dt,lind=lindl))*itab(eigl,0,1,ntot,ntot)[0][:]
     rho=np.expand_dims(np.expand_dims(rho,-1),-1)
     mps=mps_block(0,0,0)
     mps.insert_site(0,rho)
+    
     propmpo=tempo_mpoblock(eigl,ham,dt,1,1,ntot)
     if len(lindl)>0:
         propmpo.data[0].update_site(tens_in=sitetensor(eigl,1,1,1,ntot,ham,dt,lind=lindl))
@@ -252,7 +252,7 @@ def tempo(eigl,irho,ham,dt,ntot,dkm,p,mod=0,oplis=[],lindl=[],datf=None,savemps=
         print("\npoint: "+str(jj)+" of "+str(ntot))
         ttt=time.time()
         rhoN=mps.readout2()
-        datlis.append([jj*dt,np.dot(rhoN,freeprop(ham,0.5*dt))])
+        datlis.append([jj*dt,np.dot(rhoN,freeprop(ham,0.5*dt,lind=lindl))])
         
         if type(datf)==str:
             if fmod(jj,smps)==0:
@@ -262,7 +262,7 @@ def tempo(eigl,irho,ham,dt,ntot,dkm,p,mod=0,oplis=[],lindl=[],datf=None,savemps=
                 mpsfile.close()
                 print('mps saved')
                 
-            pickle.dump([jj*dt,np.dot(rhoN,freeprop(ham,0.5*dt))],datfile)
+            pickle.dump([jj*dt,np.dot(rhoN,freeprop(ham,0.5*dt,lind=lindl))],datfile)
             datfile.flush()
           
         if len(oplis)>0 and jj==oplis[0][0]:
@@ -390,15 +390,15 @@ irho=0.5*(idd+sz*sigz+sy*sigy+sx*sigx)
 
 kk=50
 pp=50
-cc=1
+cc=2
 def eta1(t):
-    return ln.eta_all(t,0.2,3,7.5,0,0.5*0.5*0.01*cc)
+    return ln.eta_all(t,0.2,3,8,0,0.5*0.5*0.01*cc)
 eigs=[[[1,-1]],[eta1]]
          
-dkmax=100    
-delt=0.05
-nt=45
-optime=20
+dkmax=150    
+delt=0.04
+nt=1600
+optime=800
 #name="supohmtest_"+str(cc)+"_dkm"+str(dkmax)+"_prec"+str(pp)+".pickle"
 
 mkov=1
@@ -416,18 +416,16 @@ indat=[]
 #fr0,fd0=qutip.spectrum_correlation_fft(xdat[0]-delt*optime,xdat[1])
 fourdat1=ft.fft(xdat[1])
 freq1=ft.fftfreq(xdat[0].shape[-1],delt)
-for jj in freq1:
-    print(jj)
-if len(freq1) % 2 == 0:
+datl=len(freq1)
+
+if datl % 2 == 0:
     print('doing it')
-    freq1=concatenate((freq1[len(freq1)/2:],freq1[:len(freq1)/2]))
-    fourdat1=concatenate((fourdat1[len(fourdat1)/2:],fourdat1[:len(fourdat1)/2]))
-for jj in freq1:
-    print(jj)
-    #print(freq1)
-print(len(freq1))
-#fourdat2=ft.fft(indat)
-#freq2=ft.fftfreq(xdat[0].shape[-1],delt)
+    freq1=concatenate((freq1[datl/2:],freq1[:datl/2]))
+    fourdat1=concatenate((fourdat1[datl/2:],fourdat1[:datl/2]))
+else:
+    datl=datl+1
+    freq1=concatenate((freq1[datl/2:],freq1[:datl/2]))
+    fourdat1=concatenate((fourdat1[datl/2:],fourdat1[:datl/2]))
 
 plt.plot(predat[0],predat[1])
 #plt.plot(xdat[0],xdat[1])
