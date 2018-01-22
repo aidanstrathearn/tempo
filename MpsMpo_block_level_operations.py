@@ -49,7 +49,12 @@ class mpo_block(object):
     #Append a new site
     self.data.append(mpo_site(tens_in = tensor_to_append))
     self.N_sites = self.N_sites + 1 
+ 
+ def append_mposite(self,mposite):
 
+    #Append a new site
+    self.data.append(mposite)
+    self.N_sites = self.N_sites + 1
 
  def reverse_mpo(self):
 
@@ -248,6 +253,18 @@ class mps_block():
     for jj in range(l-2):
         out=np.dot(np.einsum('ijk->jk',self.data[l-2-jj].m),out)
     out=np.dot(np.einsum('ijk->ik',self.data[0].m),out)  
+    return out
+
+ def readout3(self):
+    l=len(self.data)
+    if l==1:
+        out=np.sum(np.sum(self.data[0].m,-1),-1)
+        return out
+        
+    out=np.sum(np.sum(self.data[l-1].m,0),-1)
+    for jj in range(l-2):
+        out=np.dot(np.sum(self.data[l-2-jj].m,0),out)
+    out=np.dot(np.sum(self.data[0].m,1),out)  
     return out
              
 
