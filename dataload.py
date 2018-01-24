@@ -23,7 +23,7 @@ def datload(filename):
 
     
 
-d1=datload("out_coup120_dkm80_prec60.pickle")
+d1=datload("checkcoup10_dkm50_prec60.pickle")
 
 xlis=[]
 tlist=[]
