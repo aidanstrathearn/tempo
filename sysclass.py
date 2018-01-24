@@ -23,7 +23,7 @@ class temposys(object):
         self.diss=zeros((self.dim**2,self.dim**2))                    #list of lindblads and rates: [[rate1,oper1],[rate2,oper2],...]
         self.intparam=[]                    #lists of interaction op eigenvalues and bath etas: [[eigs1,eta1],[eigs2,eta2],..]
         self.intparam2=[]
-        self.ops=[[0,eye(self.dim)]]
+        self.ops=[]
         self.state=eye(self.dim)            #reduced system density matrix
         self.lindbds=[]
         self.dkmax=0                        #maximum length of the mps
@@ -68,12 +68,13 @@ class temposys(object):
             self.checkdim(el[0])
             if self.dt>0: self.intparam.append([el[0].diagonal(),el[1],self.getcoeffs(el[1])])
             else: self.intparam.append([el[0].diagonal(),el[1],[]])
-            
-   
-    def discretize(self,dt_float):
-        self.dt=dt_float
-        for el in self.intparam: el[2]=self.getcoeffs(el[1])
     
+    def add_operator(self,op_list):
+        print('adding operator')
+        for el in op_list:
+            self.checkdim(el[1])
+            self.ops.append([el[0],kron(el[1],eye(self.dim)).T])
+            
     def convergence_params(self,dt_float,dkmax_int,truncprec_int):
         self.dkmax=dkmax_int
         self.prec=10**(-0.1*truncprec_int)
@@ -116,13 +117,14 @@ class temposys(object):
         #converts 2-leg I_dk table into a 4-leg tempo mpo_site object
         iffac=self.itab(dk)
         #if dk==1 then multiply in system propagator and I_0
-        if dk==1: 
-            for opel in self.ops: 
-                if opel[0]==self.point:
-                    supop=kron(opel[1],eye(self.dim)).T
-                    iffac=iffac*self.itab(0)*dot(self.sysprop(self.point-1),dot(supop,self.sysprop(self.point)))
-                else:
-                    iffac=iffac*self.itab(0)*dot(self.sysprop(self.point-1),self.sysprop(self.point))
+        if dk==1:
+            iffac=iffac*self.itab(0)
+            if len(self.ops)>0 and self.ops[0][0]==self.point:
+                print('using op')
+                iffac=iffac*dot(self.sysprop(self.point-1),dot(self.ops[0][1],self.sysprop(self.point)))
+                del self.ops[0]
+            else:
+                iffac=iffac*dot(self.sysprop(self.point-1),self.sysprop(self.point))
         
         #initialise 4-leg tensor that will become mpo_site and loop through assigning elements
         tab=zeros((self.dim**2,self.dim**2,self.dim**2,self.dim**2),dtype=complex)
@@ -148,22 +150,31 @@ class temposys(object):
                 dot(self.state,self.sysprop(0))*self.itab(0)
                                     ,-1),-1))
         
+        self.getstate()
+        
         #append first site to mpo to give a length=1 block
         self.mpo.append_mposite(self.temposite(1))
-
+        
+    
+    def getstate(self):
+        self.state=dot(self.mps.readout3(),self.sysprop(self.point-1))
+        if len(self.ops)>0 and self.ops[0][0]==self.point: 
+            self.state=dot(self.state,self.ops[0][1])
+    
     def prop(self,ksteps=1):
         #propagates the system for ksteps - system must be prepped first
         for k in range(ksteps):
             
             t0=time()
             #find current time physical state and store this in self.dat
-            self.state=dot(self.mps.readout3(),self.sysprop(self.point-1))
+            #self.getstate()
             self.dat.append([self.point*self.dt,self.state])
             #contract and grow the mps using the mpo
             self.mps.contract_with_mpo(self.mpo,prec=self.prec,trunc_mode='accuracy')
             self.mps.insert_site(0,expand_dims(eye(self.dim**2),1))
             #move the system forward a point
             self.point=self.point+1
+            self.getstate()
             #replace dk=1 tempo site - only really necessary for time dependent hamiltonians
             self.mpo.data[0]=self.temposite(1)
             
@@ -187,6 +198,8 @@ class temposys(object):
             td[0].append(da[0])
             td[1].append(dot(op,da[1].reshape((self.dim,self.dim))).trace().real)
         return td    
+
+
 '''
 system=temposys(2)
 system.set_hamiltonian(lambda t: array([[1,3],[6,8]]))
