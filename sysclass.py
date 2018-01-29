@@ -7,6 +7,8 @@ Created on Fri Jan 19 22:56:29 2018
 """
 from numpy import array, expand_dims, kron, eye, dot, append, ones, outer, zeros, shape
 from numpy.fft import fft, fftfreq, fftshift
+from matplotlib.pyplot import plot, show, legend, subplot
+from pickle import dump
 from time import time
 from mpmath import exp
 from scipy.linalg import expm
@@ -21,22 +23,28 @@ class temposys(object):
         self.ham=lambda t: zeros((self.dim**2,self.dim**2))    #the reduced system hamiltonian is now a function of time
         self.diss=zeros((self.dim**2,self.dim**2))                    #list of lindblads and rates: [[rate1,oper1],[rate2,oper2],...]
         self.intparam=[]                    #lists of interaction op eigenvalues and bath etas: [[eigs1,eta1],[eigs2,eta2],..]
-        self.intparam2=[]
         self.ops=[]
-        self.state=eye(self.dim)            #reduced system density matrix
-        self.lindbds=[]
+        self.state=array(self.dim**2)           #reduced system density matrix
+        self.istate=array(self.dim**2)           #reduced system density matrix
         self.dkmax=0                        #maximum length of the mps
-        self.dt=0                           #size of timestep
+               
         self.prec=0                         #precision used in svds
+        self.ntot=1
+        
         self.mod=0                          #maximum point to use new quapi coeffs up to
         self.point=0                        #current point in time system is at
-        
+        self.dt=0                           #size of timestep
         self.statedat=[[],[]]
         self.corrdat=[[],[]]                         #data list: [[time1,state1],[time2,state2],...]
-        self.dfile='temp'
-        self.mps=mps_block(0,0,0)           #blank mps block
-        self.mpo=mpo_block(0,0,0)           #blank mpo block
+        self.name='temp'
+
     
+    def set_filename(self,name_string):
+        if type(name_string)==str:
+            self.name=name_string
+        else:
+            print('filename needs to be a string')
+            
     def checkdim(self,op_array):
         if shape(op_array)==(self.dim,self.dim):
             return 0
@@ -44,11 +52,14 @@ class temposys(object):
             print(op_array)
             print('input operator has wrong dims: '+str(shape(op_array)))
             #exit()
-            
     
+    def set_endtime(self,tfinal_float,ntot_integer):
+        self.ntot=ntot_integer
+        self.dt=tfinal_float/ntot_integer
+        
     def set_state(self,state_array):
         self.checkdim(state_array)
-        self.state=state_array.reshape(self.dim**2)
+        self.istate=state_array.reshape(self.dim**2)
         
     def set_hamiltonian(self,ham_function):
         self.checkdim(ham_function(0))
@@ -72,22 +83,11 @@ class temposys(object):
         for el in op_list:
             self.checkdim(el[1])
             self.ops.append([el[0],kron(el[1],eye(self.dim)).T])
-    
-    def ttcorr(self,op1_array,op2_array,j1_int,j2_int):
-            self.add_operator([[j1_int,op1_array]])
-            self.checkdim(op2_array)
-            self.prep()
-            self.prop(j2_int)
-            for jj in range(j1_int,j2_int+1):
-                self.corrdat[0].append(self.statedat[0][jj]-j1_int*self.dt)
-                self.corrdat[1].append(dot(op2_array,self.statedat[1][jj].reshape((self.dim,self.dim))).trace() ) 
-            self.statedat[0]=self.statedat[0][:j1_int]
-            self.statedat[1]=self.statedat[1][:j1_int]
-            return 0        
+          
         
     def convergence_params(self,dt_float,dkmax_int,truncprec_int):
         self.dkmax=dkmax_int
-        self.prec=10**(-0.1*truncprec_int)
+        self.prec=truncprec_int
         self.dt=dt_float
         for el in self.intparam: el[2]=self.getcoeffs(el[1])
             
@@ -150,8 +150,12 @@ class temposys(object):
             return mpo_site(tens_in=tab)
                      
     def prep(self):
+        #datfile=open(self.name+".pickle",'wb')
         #prepares system to be propagated once params have been set
-        self.statedat=[[0],[self.state]]     #store initial state in data
+        self.mps=mps_block(0,0,0)           #blank mps block
+        self.mpo=mpo_block(0,0,0)           #blank mpo block
+        self.state=self.istate
+        self.statedat=[[0],[self.state],[self.dkmax,self.prec]]     #store initial state in data
         self.point=1                        #move to first point
         #self.getcoeffs()                    #calculate the makri coeffs
         
@@ -165,15 +169,18 @@ class temposys(object):
         #append first site to mpo to give a length=1 block
         self.mpo.append_mposite(self.temposite(1))
         
+        
+        
     
     def getstate(self):
         self.state=dot(self.mps.readout3(),self.sysprop(self.point-1))
         if len(self.ops)>0 and self.ops[0][0]==self.point: 
             self.state=dot(self.state,self.ops[0][1])
     
-    def prop(self,ksteps=1):
+    def prop(self,kpoints=1):
+        avgt=0
         #propagates the system for ksteps - system must be prepped first
-        for k in range(ksteps):
+        for k in range(kpoints):
             
             t0=time()
             #find current time physical state and store this in self.dat
@@ -181,7 +188,7 @@ class temposys(object):
             self.statedat[0].append(self.point*self.dt)
             self.statedat[1].append(self.state)
             #contract and grow the mps using the mpo
-            self.mps.contract_with_mpo(self.mpo,prec=self.prec,trunc_mode='accuracy')
+            self.mps.contract_with_mpo(self.mpo,prec=10**(-0.1*self.prec),trunc_mode='accuracy')
             self.mps.insert_site(0,expand_dims(eye(self.dim**2),1))
             #move the system forward a point
             self.point=self.point+1
@@ -201,20 +208,210 @@ class temposys(object):
             else:
                 #if not using new quapi and point>kmax just contract away end site of mpo
                 self.mps.contract_end()
-            print("propagated " +str(k+1)+" of "+str(ksteps)+"  Time: "+str(time()-t0))
-          
-
+            avgt=(avgt*(self.point-2)+time()-t0)/(self.point-1)
+            print("point:" +str(k+1)+' avg time:'+str(avgt)+' dkm:'+str(self.dkmax)+' pp:'+str(self.prec))
+            #print('avg time: '+str(avgt))
+        
+            dump(self.statedat,open(self.name+"_statedat_dkm"+str(self.dkmax)+"prec"+str(self.prec)+".pickle",'wb'))
+     
+    def convergence_scan(self,dkm_list,prec_list,ntot):
+        self.convdat=[]
+        for pp in prec_list:
+            self.convdat.append([])
+            for dk in dkm_list:
+                self.convergence_params(self.dt,dk,pp)
+                self.prep()
+                self.prop(ntot)
+                self.convdat[-1].append(self.statedat)
+    
+    def ttcorr(self,op1_array,op2_array,j1_int,j2_int):
+            self.corrdat=[[],[],[self.dkmax,self.prec]]
+            self.add_operator([[j1_int,op1_array]])
+            self.checkdim(op2_array)
+            self.prep()
+            self.prop(j2_int)
+            for jj in range(j1_int,j2_int+1):
+                self.corrdat[0].append(self.statedat[0][jj]-j1_int*self.dt)
+                self.corrdat[1].append(self.observe(op2_array,self.statedat[1][jj]) ) 
+            self.statedat[0]=self.statedat[0][:j1_int]
+            self.statedat[1]=self.statedat[1][:j1_int]
+            return 0  
+    
+    def ttcorr_convergence_check(self,op1_array,op2_array,j1_int,dkm_list,prec_list,ntot):
+        self.convergence_params(self.dt,dkm_list[-1],prec_list[-1])
+        self.ttcorr(op1_array,op2_array,j1_int,ntot)
+        self.convdat=[[self.statedat],[self.statedat]]
+        self.corr_convdat=[[self.corrdat],[self.corrdat]]
+        self.spec_convdat=[[self.getspectrum()],[self.getspectrum()]]
+        for pp in prec_list[:-1]:
+            self.convergence_params(self.dt,dkm_list[-1],pp)
+            self.ttcorr(op1_array,op2_array,j1_int,ntot)
+            self.convdat[0].append(self.statedat)
+            self.corr_convdat[0].append(self.corrdat)
+            self.spec_convdat[0].append(self.getspectrum())
+        for kk in dkm_list[:-1]:
+            self.convergence_params(self.dt,kk,prec_list[-1])
+            self.ttcorr(op1_array,op2_array,j1_int,ntot)
+            self.convdat[1].append(self.statedat)
+            self.corr_convdat[1].append(self.corrdat)
+            self.spec_convdat[1].append(self.getspectrum())
+    
+    def ttcorr_convergence_plot(self,op):
+        subplot(231)
+        for ppdat in self.convdat[0]:
+            opdat=[]
+            for rhvec in ppdat[1]:
+                opdat.append(self.observe(op,rhvec))
+            plot(ppdat[0],opdat,label='dkm'+str(ppdat[2][0])+'pp'+str(ppdat[2][1]))
+        legend()
+        
+        subplot(234)
+        for kkdat in self.convdat[1]:
+            opdat=[]
+            for rhvec in kkdat[1]:
+                opdat.append(self.observe(op,rhvec))
+            plot(kkdat[0],opdat,label='dkm'+str(kkdat[2][0])+'pp'+str(kkdat[2][1]))
+        legend()
+        
+        subplot(232)
+        for ppdat in self.corr_convdat[0]:
+            redat=[]
+            imdat=[]
+            for datum in ppdat[1]:
+                redat.append(datum.real)
+                imdat.append(datum.imag)
+            plot(ppdat[0],redat,label='dkm'+str(ppdat[2][0])+'pp'+str(ppdat[2][1]))
+        legend()
+        
+        subplot(235)
+        for kkdat in self.corr_convdat[1]:
+            redat=[]
+            imdat=[]
+            for datum in kkdat[1]:
+                redat.append(datum.real)
+                imdat.append(datum.imag)
+            plot(kkdat[0],redat,label='dkm'+str(kkdat[2][0])+'pp'+str(kkdat[2][1]))
+        legend()
+        
+        subplot(233)
+        for ppdat in self.spec_convdat[0]:
+            redat=[]
+            imdat=[]
+            for datum in ppdat[1]:
+                redat.append(datum.real)
+                imdat.append(datum.imag)
+            plot(ppdat[0],redat,label='dkm'+str(ppdat[2][0])+'pp'+str(ppdat[2][1]))
+        legend()
+        
+        subplot(236)
+        for kkdat in self.spec_convdat[1]:
+            redat=[]
+            imdat=[]
+            for datum in kkdat[1]:
+                redat.append(datum.real)
+                imdat.append(datum.imag)
+            plot(kkdat[0],redat,label='dkm'+str(kkdat[2][0])+'pp'+str(kkdat[2][1]))
+        legend()
+        
+        show()
+    
+    def getspectrum(self):
+        
+        return [fftshift(fftfreq(len(self.corrdat[0]),self.dt)*2*3.1415926),fftshift(fft(self.corrdat[1]-self.corrdat[1][-1])),[self.dkmax,self.prec]]   
+    
+    def convergence_check(self,dkm_list,prec_list,ntot):
+        self.convergence_params(self.dt,dkm_list[-1],prec_list[-1])
+        self.prep()
+        self.prop(ntot)
+        self.convdat=[[self.statedat],[self.statedat]]
+        for pp in prec_list[:-1]:
+            self.convergence_params(self.dt,dkm_list[-1],pp)
+            self.prep()
+            self.prop(ntot)
+            self.convdat[0].append(self.statedat)
+        for kk in dkm_list[:-1]:
+            self.convergence_params(self.dt,kk,prec_list[-1])
+            self.prep()
+            self.prop(ntot)
+            self.convdat[1].append(self.statedat)
+    
+    def convergence_checkplot(self,op):
+        subplot(221)
+        for ppdat in self.convdat[0]:
+            opdat=[]
+            for rhvec in ppdat[1]:
+                opdat.append(self.observe(op,rhvec))
+            plot(ppdat[0],opdat,label='dkm'+str(ppdat[2][0])+'pp'+str(ppdat[2][1]))
+        legend()
+        
+        subplot(222)
+        for kkdat in self.convdat[1]:
+            opdat=[]
+            for rhvec in kkdat[1]:
+                opdat.append(self.observe(op,rhvec))
+            plot(kkdat[0],opdat,label='dkm'+str(kkdat[2][0])+'pp'+str(kkdat[2][1]))
+        legend()
+        
+        subplot(224)
+        for kkdat in self.convdat[1]:
+            opdat=[]
+            for rhvec in kkdat[1]:
+                opdat.append(self.observe(op,rhvec))
+            plot(kkdat[0],opdat,label='dkm'+str(kkdat[2][0])+'pp'+str(kkdat[2][1]))
+        legend()
+        show()
+        
+    def convergence_getdat(self,op):
+        datgrid=[]
+        for pplis in self.convdat:
+            datgrid.append([])
+            for dkdat in pplis:
+                opdat=[]
+                for rhvec in dkdat[1]:
+                    opdat.append(self.observe(op,rhvec))
+                datgrid[-1].append(opdat)
+        return self.convdat[0][0][0], datgrid
+    
+    def convergence_plotdat(self,op):
+        plts=[]
+        for pplis in self.convdat:
+            for dkdat in pplis:
+                opdat=[]
+                for rhvec in dkdat[1]:
+                    opdat.append(self.observe(op,rhvec))
+                pp,=plot(dkdat[0],opdat,label='dkm'+str(dkdat[2][0])+'pp'+str(dkdat[2][1]))
+                plts.append(pp)
+        legend(handles=plts)
+        show()
+                         
+    def savesystem():
+        
+        return 0
+    
+    def savedata():
+        return 0
+    
     def getopdat(self,op):
         od=[]
         for da in self.statedat[1]:
             od.append(dot(op,da.reshape((self.dim,self.dim))).trace().real)
         return [self.statedat[0],od]
     
+    def observe(self,op,rhovec):
+        return dot(op,rhovec.reshape((self.dim,self.dim))).trace().real
+    
+    def plotopdat(self,op):
+        od=[]
+        for da in self.statedat[1]:
+            od.append(dot(op,da.reshape((self.dim,self.dim))).trace().real)
+        plot(self.statedat[0],od)
+        show()
+        return [self.statedat[0],od]
+    
     def getcorrdat(self):
         return self.corrdat
     
-    def getspectrum(self):
-        return [fftshift(fftfreq(len(self.corrdat[0]),self.dt)*2*3.1415926),fftshift(fft(self.corrdat[1]))]
+    
 
 
 '''
