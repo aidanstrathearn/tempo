@@ -150,6 +150,7 @@ class temposys(object):
             return mpo_site(tens_in=tab)
                      
     def prep(self):
+        #print('prepping')
         #datfile=open(self.name+".pickle",'wb')
         #prepares system to be propagated once params have been set
         self.mps=mps_block(0,0,0)           #blank mps block
@@ -159,14 +160,16 @@ class temposys(object):
         self.point=1                        #move to first point
         #self.getcoeffs()                    #calculate the makri coeffs
         
+        #print('inserting')
         #propagte initial state half a timestep with sys prop and multiply in I_0 to get initial 1-leg ADT           
         self.mps.insert_site(0,expand_dims(expand_dims(
                 dot(self.state,self.sysprop(0))*self.itab(0)
                                     ,-1),-1))
-        
+        #print('inseterted')
         self.getstate()
         
         #append first site to mpo to give a length=1 block
+        #print('appending')
         self.mpo.append_mposite(self.temposite(1))
         
         
@@ -336,7 +339,7 @@ class temposys(object):
             self.convdat[1].append(self.statedat)
     
     def convergence_checkplot(self,op):
-        subplot(221)
+        subplot(211)
         for ppdat in self.convdat[0]:
             opdat=[]
             for rhvec in ppdat[1]:
@@ -344,21 +347,14 @@ class temposys(object):
             plot(ppdat[0],opdat,label='dkm'+str(ppdat[2][0])+'pp'+str(ppdat[2][1]))
         legend()
         
-        subplot(222)
+        subplot(212)
         for kkdat in self.convdat[1]:
             opdat=[]
             for rhvec in kkdat[1]:
                 opdat.append(self.observe(op,rhvec))
             plot(kkdat[0],opdat,label='dkm'+str(kkdat[2][0])+'pp'+str(kkdat[2][1]))
         legend()
-        
-        subplot(224)
-        for kkdat in self.convdat[1]:
-            opdat=[]
-            for rhvec in kkdat[1]:
-                opdat.append(self.observe(op,rhvec))
-            plot(kkdat[0],opdat,label='dkm'+str(kkdat[2][0])+'pp'+str(kkdat[2][1]))
-        legend()
+
         show()
         
     def convergence_getdat(self,op):
@@ -412,56 +408,3 @@ class temposys(object):
         return self.corrdat
     
     
-
-
-'''
-system=temposys(2)
-system.set_hamiltonian(lambda t: array([[1,3],[6,8]]))
-system.dt=1
-print(system.ham(0))
-print(shape(system.sysprop(2))  )
-print(system.sysprop2(2)) 
-print(system.sysprop(2))      
-
-########
-########
-#example code for how to run it
-
-#defining operators        
-sigz=array([[1,0],[0,-1]])
-sigx=array([[0,1],[1,0]])
-sigy=array([[0,-1j],[1j,0]])
-sigp=0.5*(sigx+1j*sigy)
-sigm=0.5*(sigx-1j*sigy)
-idd=array([[1,0],[0,1]])  
-
-#initialise a 2d tempo system and set params   
-system=temposys(2)
-#hamiltonina - a function of time, in this case constant
-system.ham=lambda t: sigx*0
-#initial state is excited
-system.state=0.5*(idd+sigx)
-#couples to sigma_z with single ohmic bath 
-system.intparam.append([[1,-1],lambda t: eta_all(t,0.2,1.000001,7.5,0,0.5*0.01*10)])
-system.lindbds.append([0.05*0,sigm])
-system.lindbds.append([0.05*0,sigp])
-#system.ops.append([150,idd])
-#timestep, memory length and truncation precision
-system.dt=0.15
-system.dkmax=10
-system.prec=0.000001
-system.mod=20
-#prep the system for propagation
-system.prep()
-#propagate the system 100 timesteps
-system.prop(20)
-#generate data for obseravble sigz and plot 
-dat=system.opdat(sigx)
-plt.plot(dat[0],dat[1])
-plt.show()
-'''
-     
-        
-        
-        
-        
