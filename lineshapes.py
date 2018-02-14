@@ -1,6 +1,6 @@
 from scipy.special import gamma
 from cmath import sin, atan, log, cos
-from mpmath import zeta,polygamma,harmonic,euler,lerchphi,coth,exp,psi
+from mpmath import zeta,polygamma,harmonic,euler,lerchphi,coth,exp,psi,cot
 from mpmath import gamma as cgamma
 import mpmath as mp
 import scipy
@@ -76,8 +76,8 @@ def neta_sp_s3(t,T,wc,mu,A):
                     +polygamma(1,(1+1j*t*wc)/(b*wc)))
             )
             
-
-def eta_brownian(t,T,w0,al,G):
+#lineshape for underdamped Brownian oscillator: J=al*G*w0^2*w/((w0^2-w^2)^2+G^2*w^2)
+def eta_UDbrownian(t,T,w0,al,G):
     b = 2*w0**2-G**2
     c = w0**4
     xi = (4*c-b**2)**0.5
@@ -89,7 +89,7 @@ def eta_brownian(t,T,w0,al,G):
     if t==0:
         eta = 0
     else:
-        eta = -2*((-((-1 + coth(r1/(2.*T)))/r1**2) + (exp(1j*r1*t)*(-1 + coth(r1/(2.*T))))/r1**2 - (1 + coth(r2/(2.*T)))/r2**2 + 
+        eta = -2*pi*G*w0**2*al*((-((-1 + coth(r1/(2.*T)))/r1**2) + (exp(1j*r1*t)*(-1 + coth(r1/(2.*T))))/r1**2 - (1 + coth(r2/(2.*T)))/r2**2 + 
         (1 + coth(r2/(2.*T)))/(exp(1j*r2*t)*r2**2) + t*((-1j*(-1 + coth(r1/(2.*T))))/r1 + 1j*((1 + coth(r2/(2.*T))))/r2))/
         (4.*xi) + T*(-(-(r2s**2*lerchphi(exp(-(t*vn)),1,(-r1s + vn)/vn))*exp(-t*vn) - 
         r2s**2*lerchphi(exp(-(t*vn)),1,(r1s + vn)/vn)*exp(-t*vn) + r1s**2*lerchphi(exp(-(t*vn)),1,(-r2s + vn)/vn)*exp(-t*vn) + 
@@ -99,24 +99,53 @@ def eta_brownian(t,T,w0,al,G):
         r1s*polygamma(0,-((r2s - vn)/vn))))/(2.*r1s*r2s*(r1s**2 - r2s**2)*vn) - 
         (2*euler*r1s**2 - 2*euler*r2s**2 - r2s**2*polygamma(0,-((-r1s - vn)/vn)) - r2s**2*polygamma(0,-((r1s - vn)/vn)) + 
         r1s**2*polygamma(0,-((-r2s - vn)/vn)) + r1s**2*polygamma(0,-((r2s - vn)/vn)))/(2.*r1s**2*r2s**2*(r1s**2 - r2s**2)*vn)))
-        eta = eta*G*w0**2*al
-    print(t)
+    #print(t)
     return eta
 
-#Time integrated part of the auto-correlation function
+#lineshape for overdamped Brownian oscillator: J=al*wc*w/(w^2+wc^2)
+def eta_ODbrownian(t,T,wc,al):
+    vn = 2*T*pi
+    if t==0:
+        eta = 0
+    else:
+        eta = (al*(pi*(1j - 1j/exp(t*wc) + 2*t*T - 1j*t*wc) + 
+        (-1 + exp(-(t*wc)))*pi*cot(wc/(2.*T)) + harmonic(-wc/(vn)) + harmonic(wc/(vn)) + 
+        (lerchphi(exp(-vn*t),1,1 - wc/(vn)) + 
+        lerchphi(exp(-vn*t),1,1 + wc/(vn)))/exp(vn*t) + 2*log(1 - exp(-vn*t))))/(2.*wc)
+    #print(t)
+    return eta
+
+def eta_SBrownian(t,T,w0,alUD,G,wc,alOD):
+    return eta_UDbrownian(t,T,w0,alUD,G)+eta_ODbrownian(t,T,wc,alOD)
+
+#time integrated part of the auto-correlation function
 def fo(w,T,t,ct=0):
     #ct determines whether to include (1) counterterms or not (0)
     if ct==1:
-        fo = w**(-2)*(coth(w/(2*T))*(1-cos(w*t))+1j*(sin(w*t)-w*t))
+        if T==0:
+            fo = w**(-2)*((1-cos(w*t))+1j*(sin(w*t)-w*t))
+        else:
+            fo = w**(-2)*(coth(w/(2*T))*(1-cos(w*t))+1j*(sin(w*t)-w*t))
     else:
-        fo = ((1-cos(w*t))+1j*(sin(w*t)))
+        if T==0:
+            fo = w**(-2)*((1-cos(w*t))+1j*(sin(w*t)))
+        else:
+            fo = w**(-2)*(coth(w/(2*T))*(1-cos(w*t))+1j*(sin(w*t)))
     return fo
 
+'''
+lineshape for spectral density nin(w) numerically integrated - can be 
+inaccurate for large t. So use with caution when considering large dkmax*dt
+'''
 def numint(t,T,nin,ct=0): 
-    numir = scipy.integrate.quad(lambda w: scipy.real(nin(w)*(fo(w,T,t,ct))),0,inf)
-    numii = scipy.integrate.quad(lambda w: scipy.imag(nin(w)*(fo(w,T,t,ct))),0,inf)
+    if t == 0:
+        eta = 0
+    else:
+        numir = scipy.integrate.quad(lambda w: nin(w)*(fo(w,T,t,ct).real),0,inf)
+        numii = scipy.integrate.quad(lambda w: nin(w)*(fo(w,T,t,ct).imag),0,inf)
+        eta = numir[0]+1j*numii[0]
     print(t)
-    return numir[0]+1j*numii[0]
+    return eta
 
 #combines all of above for the general lineshape - still buggy though for some params
 def eta_all(t,T,s,wc,mu,A):
