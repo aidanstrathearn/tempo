@@ -6,7 +6,7 @@ import numpy as np
 import ErrorHandling as err
 from tensor_algebra import *
 import scipy.linalg as la
-import fastdot as fd
+#import fastdot as fd
 
 
 
@@ -49,7 +49,7 @@ class mpo_site(object):
            print("mpo_site: ", e.msg)
            sys.exit()
 
-
+ 
 
  def update_site(self, Sdim = None, Ndim = None, Wdim = None, Edim = None, tens_in = None):
 

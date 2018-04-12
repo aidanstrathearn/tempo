@@ -202,6 +202,7 @@ class mps_block():
  def insert_site(self, axis, tensor_to_append):
 
     try:
+       #print(len(tensor_to_append.shape))
        if len(tensor_to_append.shape) != 3: raise err.MpsSiteInputError
        #if tensor_to_append.shape[1] != 1: raise err.MpsAppendingError
 
@@ -255,6 +256,19 @@ class mps_block():
     out=np.dot(np.einsum('ijk->ik',self.data[0].m),out)  
     return out
 
+ def traceout(self):
+    l=len(self.data)
+    #dim=self
+    if l==1:
+        out=np.sum(np.sum(self.data[0].m,-1),-1)
+        return out
+        
+    out=np.sum(np.sum(self.data[l-1].m,0),-1)
+    for jj in range(l-2):
+        out=np.dot(np.sum(self.data[l-2-jj].m,0),out)
+    out=np.dot(np.sum(self.data[0].m,1),out)  
+    return out
+
  def readout3(self):
     l=len(self.data)
     if l==1:
@@ -265,8 +279,7 @@ class mps_block():
     for jj in range(l-2):
         out=np.dot(np.sum(self.data[l-2-jj].m,0),out)
     out=np.dot(np.sum(self.data[0].m,1),out)  
-    return out
-             
+    return out           
 
  def copy_mps(self, mps_copy, copy_conj=False): 
 
@@ -367,7 +380,9 @@ class mps_block():
     self.is_multiplied=[]
     for i in range(self.N_sites):
         self.is_multiplied.append(False)
-
+    
+    #self.reverse_mps_mpo_network(mpo_block) 
+    
     if (orth_centre > 0):
         self.left_sweep_mps_mpo(mpo_block, orth_centre, prec, trunc_mode) 
 
@@ -395,6 +410,7 @@ class mps_block():
     #(if Oc=N --> do backward sweep with Oc=0; if Oc=0 --> do backward sweep with Oc=N; else --> do both sweeps)
     if (orth_centre > 0): self.canonicalize_mps(0, prec, trunc_mode)
     if (orth_centre < self.N_sites): self.canonicalize_mps(self.N_sites, prec, trunc_mode)
+    #self.reverse_mps_mpo_network(mpo_block) 
  
  def contract_with_mpo2(self, mpo_block, orth_centre=None, prec=0.0001, trunc_mode='accuracy'):          
 
@@ -405,9 +421,10 @@ class mps_block():
  def left_sweep_mps_mpo(self, mpo_block, orth_centre, prec, trunc_mode): 
 
     #print('MULT at site ', 0)
-
+    
     self.data[0].update_site(tens_in = TensMul(mpo_block.data[0].m, self.data[0].m))
     self.is_multiplied[0] = True
+                  
 
     for site in range(1,orth_centre):
         #print(site)
@@ -415,6 +432,7 @@ class mps_block():
         #print('MULT & SVD at site ', site)
         #print(self.data[site].m)
         if not self.is_multiplied[site]:
+            #print('first zip site: ' +str(site-1))
             self.data[site-1].zip_mps_mpo_sites(self.data[site], mpo_block.data[site], prec, trunc_mode)
             self.is_multiplied[site] = True
         else:
@@ -432,6 +450,7 @@ class mps_block():
      bond=[]                
      for ss in range(self.N_sites):
           bond.append(self.data[ss].m.shape[2])
+     #print(bond)
      return bond
           
  def totsize(self):
@@ -439,7 +458,9 @@ class mps_block():
      for ss in range(self.N_sites):
          size=self.data[ss].m.shape[0]*self.data[ss].m.shape[1]*self.data[ss].m.shape[2]+size
      return size     
-
+ 
+ def applyop(self,op,site):
+     self.data[site].m=np.einsum('ij,jkl',op,self.data[site].m)
 
 for jj in range(1,1):
     print(jj)
