@@ -1,3 +1,6 @@
 *.pickle
 *.dat
-
+*.pbs*
+*.txt
+*.out
+*.sh*
