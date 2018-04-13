@@ -281,7 +281,20 @@ class temposys(object):
             print(self.mps.bonddims())
             dump(self.statedat,open(self.name+"_statedat_dkm"+str(self.dkmax)+"prec"+str(self.prec)+".pickle",'wb'))
             dump(self.mpsdims,open(self.name+"_mpsdims_dkm"+str(self.dkmax)+"prec"+str(self.prec)+".pickle",'wb'))
-            
+    
+    def find_prec(self,dt,dk,ntot,prec):
+        self.convdat=[]
+        maxdif=100
+        inp=20
+        self.convergence_params(self.dt,dk,inp)
+        self.prep()
+        self.prop(ntot)
+        self.convdat.append(self.statedat)
+        while maxdif>prec:
+            inp=inp+10
+        
+        return 0
+       
     def convergence_scan(self,dkm_list,prec_list,ntot):
         self.convdat=[]
         for pp in prec_list:
