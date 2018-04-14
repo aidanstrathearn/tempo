@@ -13,7 +13,7 @@ Created on Fri Jan 19 22:56:29 2018
 
 @author: aidan
 """
-from numpy import ascontiguousarray,unique,array, expand_dims, kron, eye, dot, ones, outer, zeros, shape
+from numpy import ceil, ascontiguousarray,unique,array, expand_dims, kron, eye, dot, ones, outer, zeros, shape
 from numpy.fft import fft, fftfreq, fftshift
 import numpy as np
 from matplotlib.pyplot import plot, show, legend, subplot, figure, imshow, colorbar
@@ -274,27 +274,74 @@ class temposys(object):
                 #if not using new quapi and point>kmax just contract away end site of mpo
                 self.mps.contract_end()
             #avgt=(avgt*(self.point-2)+time()-t0)/(self.point-1)
-            print("point:" +str(k+1)+' time:'+str(time()-t0)+' dkm:'+str(self.dkmax)+' pp:'+str(self.prec))
-            print('abs point: '+str(self.point))
+            print("point:" +str(self.point)+' time:'+str(time()-t0)+' dkm:'+str(self.dkmax)+' pp:'+str(self.prec))        
+            print('max dim: '+str(max(self.mps.bonddims()))+' tot size: '+str(self.mps.totsize()))
             self.mpsdims[0].append(time()-t0)
             self.mpsdims[1].append(self.mps.bonddims())
-            print(self.mps.bonddims())
+            
             dump(self.statedat,open(self.name+"_statedat_dkm"+str(self.dkmax)+"prec"+str(self.prec)+".pickle",'wb'))
             dump(self.mpsdims,open(self.name+"_mpsdims_dkm"+str(self.dkmax)+"prec"+str(self.prec)+".pickle",'wb'))
     
-    def find_prec(self,dt,dk,ntot,prec):
-        self.convdat=[]
-        maxdif=100
-        inp=20
-        self.convergence_params(self.dt,dk,inp)
+    def find_prec(self,dt,dk,ntot,prec,inp=20,inc=10):
+        self.p_difdat=[]
+        maxdif=1+prec
+        self.convergence_params(dt,dk,inp)
         self.prep()
         self.prop(ntot)
-        self.convdat.append(self.statedat)
-        while maxdif>prec:
-            inp=inp+10
+        self.p_difdat=self.statedat[1]
         
+        while maxdif>prec:
+            inp=inp+inc
+            self.convergence_params(dt,dk,inp)
+            self.prep()         
+            self.prop(ntot)
+            maxr=max(abs((array(self.statedat[1])-array(self.p_difdat)).real).flatten())
+            maxi=max(abs((array(self.statedat[1])-array(self.p_difdat)).imag).flatten())
+            #plot(self.statedat[0],array(self.statedat[1]).T[0])
+            #plot(self.statedat[0],array(self.statedat[1]).T[1].real)
+            #plot(self.statedat[0],array(self.statedat[1]).T[1].imag)
+            maxdif=max([maxr,maxi])
+            self.p_difdat=self.statedat[1]
+            #inp=inp+5 
+            #print(inp)
+            #maxdif=prec-1
+        return inp
+                
+    
+    def find_dkm(self,dt,ntot,prec,dk_in=10,pin=20,pinc=10):
+        cpp=self.find_prec(dt,dk_in,ntot,prec,inp=pin,inc=pinc)
+        self.k_difdat=self.p_difdat
+        #plot(self.statedat[0],array(self.statedat[1]).T[0])
+        self.convergence_params(dt,int(ceil(3*dk_in/4)),cpp)
+        self.prep()         
+        self.prop(ntot)
+        maxr=max(abs((array(self.statedat[1])-array(self.k_difdat)).real).flatten())
+        maxi=max(abs((array(self.statedat[1])-array(self.k_difdat)).imag).flatten())
+        maxdif=max([maxr,maxi])
+        while maxdif>prec:
+            dk_in=int(ceil(4*dk_in/3))
+            cpp=self.find_prec(dt,dk_in,ntot,prec,cpp-pinc,inc=pinc)
+            maxr=max(abs((array(self.statedat[1])-array(self.k_difdat)).real).flatten())
+            maxi=max(abs((array(self.statedat[1])-array(self.k_difdat)).imag).flatten())
+            maxdif=max([maxr,maxi])
+            self.k_difdat=self.statedat[1]
+            #plot(self.statedat[0],array(self.statedat[1]).T[0])
+        
+        print('converged with (dkm,pp)=('+str(dk_in)+', '+str(cpp)+')')
+        #show()
+        return dk_in, cpp
+    
+    def find_dt(self,dt_in,ntot,prec):
+        ddk,pp=self.find_dkm(dt_in,ntot,prec)
+        
+        plot(self.statedat[0],array(self.k_difdat).T[0])
+        self.find_dkm(dt_in*4/3,int(ceil(ntot*3/4)),prec)
+        plot(self.statedat[0],array(self.k_difdat).T[0])
+        print(int(ceil(ntot*3/4)))
+        show()
         return 0
-       
+        
+
     def convergence_scan(self,dkm_list,prec_list,ntot):
         self.convdat=[]
         for pp in prec_list:
@@ -321,21 +368,23 @@ class temposys(object):
             self.prop(ntot)
             self.convdat[1].append(self.statedat)
     
-    def convergence_checkplot(self,op):
+    def convergence_checkplot(self,oplis):
         subplot(211)
         for ppdat in self.convdat[0]:
-            opdat=[]
-            for rhvec in ppdat[1]:
-                opdat.append(self.observe(op,rhvec))
-            plot(ppdat[0],opdat,label='dkm'+str(ppdat[2][0])+'pp'+str(ppdat[2][1]))
+            for op in oplis:
+                opdat=[]
+                for rhvec in ppdat[1]:
+                    opdat.append(self.observe(op,rhvec))
+                plot(ppdat[0],opdat,label='dkm'+str(ppdat[2][0])+'pp'+str(ppdat[2][1]))
         legend()
         
         subplot(212)
         for kkdat in self.convdat[1]:
-            opdat=[]
-            for rhvec in kkdat[1]:
-                opdat.append(self.observe(op,rhvec))
-            plot(kkdat[0],opdat,label='dkm'+str(kkdat[2][0])+'pp'+str(kkdat[2][1]))
+            for op in oplis:
+                opdat=[]
+                for rhvec in kkdat[1]:
+                    opdat.append(self.observe(op,rhvec))
+                plot(kkdat[0],opdat,label='dkm'+str(kkdat[2][0])+'pp'+str(kkdat[2][1]))
         legend()
 
         show()
@@ -629,6 +678,7 @@ class temposys(object):
     def getspectrum(self):
         
         return [fftshift(fftfreq(len(self.corrdat[0]),self.dt)*2*3.1415926),fftshift(fft(self.corrdat[1]-self.corrdat[1][-1])),[self.dkmax,self.prec]]
+
 def datload(filename):
     f=open(filename, "rb")
     dlist=load(f,encoding='bytes')
@@ -792,8 +842,8 @@ print(ub)
 v1=[v1[i] for i in ub[1]]
 print(v1)
 '''
-'''
-ten=array([[1,2],[3,4,5]])
+
+ten=array([[1-3j,2,4],[3,4,5]])
 vec=array([6,7,8])
-dot(ten[1],vec)
-'''
+print(abs(ten.imag))
+
