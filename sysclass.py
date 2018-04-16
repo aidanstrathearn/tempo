@@ -154,7 +154,6 @@ class temposys(object):
         etab=[tb[1]]
         for jj in range(1,self.dkmax+1):
             etab.append(tb[jj+1]-2*tb[jj]+tb[jj-1])
-            
         #etab=[tb[1]]+list(map(lambda jj: tb[jj+1]-2*tb[jj]+tb[jj-1],range(1,self.dkmax+1)))
         #if 
         #if self.mod>self.dkmax:
