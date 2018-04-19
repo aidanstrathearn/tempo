@@ -56,10 +56,9 @@ class temposys(object):
             self.state=array(self.dim**2)           #reduced system density matrix
             self.istate=array(self.dim**2)           #reduced system density matrix
             self.dkmax=0                        #maximum length of the mps
-            self.mpsdims=[[],[]]
             self.prec=0                         #precision used in svds
             self.ntot=1
-        
+            self.diagnostics=[[],[],[],[]]
             self.mod=0                          #maximum point to use new quapi coeffs up to
             self.point=0                        #current point in time system is at
             self.dt=0                           #size of timestep
@@ -275,11 +274,13 @@ class temposys(object):
             #avgt=(avgt*(self.point-2)+time()-t0)/(self.point-1)
             print("point:" +str(self.point)+' time:'+str(time()-t0)+' dkm:'+str(self.dkmax)+' pp:'+str(self.prec))        
             print('max dim: '+str(max(self.mps.bonddims()))+' tot size: '+str(self.mps.totsize()))
-            self.mpsdims[0].append(time()-t0)
-            self.mpsdims[1].append(self.mps.bonddims())
-            
+
+            self.diagnostics[0].append(time()-t0)
+            self.diagnostics[1].append(max(self.mps.bonddims()))
+            self.diagnostics[2].append(self.mps.totsize())
+            self.diagnostics[3].append(self.mps.bonddims())
             dump(self.statedat,open(self.name+"_statedat_dkm"+str(self.dkmax)+"prec"+str(self.prec)+".pickle",'wb'))
-            dump(self.mpsdims,open(self.name+"_mpsdims_dkm"+str(self.dkmax)+"prec"+str(self.prec)+".pickle",'wb'))
+            dump(self.diagnostics,open(self.name+"_diagnostics_dkm"+str(self.dkmax)+"prec"+str(self.prec)+".pickle",'wb'))
     
     def find_prec(self,dt,dk,ntot,prec,inp=20,inc=10):
         self.p_difdat=[]
@@ -442,12 +443,12 @@ class temposys(object):
         return self.corrdat
     
     def bondplot(self):
-        for el in self.mpsdims[1]:
-            while len(el)<len(self.mpsdims[1][-1]):
+        for el in self.diagnostics[3]:
+            while len(el)<len(self.diagnostics[3][-1]):
                 el.append(0)
         
         figure()
-        imshow(self.mpsdims[1],extent=[0,self.point*self.dt,0,self.point*self.dt])#,vmin=60,vmax=90)
+        imshow(self.diagnostics[3],extent=[0,self.point*self.dt,0,self.point*self.dt])#,vmin=60,vmax=90)
         colorbar()
         show()
     
