@@ -175,11 +175,12 @@ class temposys(object):
             #picking out the correct eta coeff
             vec1=vec1+el[0][0]
             eta_dk=el[2][dk+(self.point-dk)*int((self.mod and self.point)>self.dkmax and dk>1)]
+            #print(eta_dk)
             vec2=vec2+eta_dk.real*el[0][0]+1j*eta_dk.imag*el[0][1]
         if dk>1:
             vec1=array([vec1[i] for i in self.deg[0][1]])
             vec2=array([vec2[i] for i in self.deg[1][1]])
-            
+        
         iffac=2.7182818284590452353602874713527**(outer(vec2,-vec1))
    
         if dk==0: return iffac.diagonal() #I_0 is a funtion of one varibale only so is converted to vector
@@ -188,16 +189,17 @@ class temposys(object):
     def temposite(self,dk):
         #converts 2-leg I_dk table into a 4-leg tempo mpo_site object
         iffac=self.itab(dk)
-
+        #print(iffac)
         if dk==1:
-            iffac=iffac*self.itab(0)
+            iffac=(iffac*self.itab(0))
             if len(self.ops)>0 and self.ops[0][0]==self.point:
                 print('using op')
                 iffac=iffac*dot(self.sysprop2(self.point-1),dot(self.ops[0][1],self.sysprop2(self.point)))
                 del self.ops[0]
             else:
                 iffac=iffac*dot(self.sysprop2(self.point-1),self.sysprop2(self.point))
-        
+            
+            #print(iffac)
                 #initialise 4-leg tensor that will become mpo_site and loop through assigning elements
             tab=zeros((self.deg[1][0],self.dim**2,self.dim**2,self.deg[0][0]),dtype=complex)
             for i1 in range(self.dim**2):
@@ -368,6 +370,22 @@ class temposys(object):
             self.prop(ntot)
             self.convdat[1].append(self.statedat)
     
+    def convergence_check2(self,dkm_list,prec_list,ntot):
+        self.convergence_params(dkm_list[-1][0],dkm_list[-1][1],prec_list[-1])
+        self.prep()
+        self.prop(ntot)
+        self.convdat=[[self.statedat],[self.statedat]]
+        for pp in prec_list[:-1]:
+            self.convergence_params(dkm_list[-1][0],dkm_list[-1][1],pp)
+            self.prep()
+            self.prop(ntot)
+            self.convdat[0].append(self.statedat)
+        for kk in dkm_list[:-1]:
+            self.convergence_params(kk[0],kk[1],prec_list[-1])
+            self.prep()
+            self.prop(ntot)
+            self.convdat[1].append(self.statedat)
+    
     def convergence_checkplot(self,oplis):
         subplot(211)
         for ppdat in self.convdat[0]:
@@ -528,6 +546,9 @@ class temposys(object):
         self.convdat=[[self.statedat],[self.statedat]]
         self.corr_convdat=[[self.corrdat],[self.corrdat]]
         self.spec_convdat=[[self.getspectrum()],[self.getspectrum()]]
+        dump(self.convdat[0][0],open(self.name+"_statedat_dkm"+str(self.dkmax)+"prec"+str(self.prec)+".pickle",'wb'))
+        dump(self.corr_convdat[0][0],open(self.name+"_corrdat_dkm"+str(self.dkmax)+"prec"+str(self.prec)+".pickle",'wb'))
+        dump(self.spec_convdat[0][0],open(self.name+"_specdat_dkm"+str(self.dkmax)+"prec"+str(self.prec)+".pickle",'wb'))
         for pp in prec_list[:-1]:
             self.convergence_params(self.dt,dkm_list[-1],pp)
             self.ttcorr(op1_array,op2_array,j1_int,ntot)
