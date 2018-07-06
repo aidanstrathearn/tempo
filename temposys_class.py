@@ -36,9 +36,6 @@ class temposys(object):
         #of unique elements so that the full multidimensional array can be reconstructed
         self.deg=[]
         
-        #keeping track of how many bath we attach to system - any degeneracy has to be common to all baths
-        self.nbaths=0
-        
         #instantaneous reduced system density matrix - vectorised
         self.state=array(self.dim**2)
         
@@ -74,20 +71,21 @@ class temposys(object):
         self.name='temp'
     
     def comm(self,op):
-        return kron(op,eye(self.dim)) - kron(eye(self.dim),op.T)
-    
+        #constructs commutator superoperator of Hilbert space operator op
+        return kron(op,eye(self.dim)) - kron(eye(self.dim),op.T)   
     def acomm(self,op):
+        #constructs anticommutator superoperator of Hilbert space operator op
         return kron(op,eye(self.dim)) + kron(eye(self.dim),op.T)
-    
+       
     def set_filename(self,name_string):
         #sets the name of the system
         if type(name_string)==str:
             self.name=name_string
         else:
             print('filename needs to be a string')
-            
+           
     def checkdim(self,op_array):
-        #checks that input arrays have the correct dimensions
+        #checks that op_array is a hilbert space operator
         if shape(op_array)==(self.dim,self.dim):
             return 0
         else:
@@ -98,36 +96,73 @@ class temposys(object):
         self.checkdim(state_array)
         self.istate=state_array.reshape(self.dim**2)
     
+    def set_hamiltonian(self,ham):
+        #constructs reduced system liouvillian and stores as self.ham
+        self.checkdim(ham)
+        self.ham= -1j*self.comm(ham)
+        #if discretized then construct the free propagator
+        #note dt/2 due to symmetrized trotter splitting
+        if self.dt>0: self.freeprop=expm(self.ham*self.dt/2).T 
+                                        
     def get_state(self):
         self.state=dot(self.mps.readout(),self.freeprop)
         self.statedat[0].append(self.point*self.dt)
         self.statedat[1].append(self.state)
     
-    def savesys(self):
-        dump(self,open(self.name+"_sys_dkm"+str(self.dkmax)+"prec"+str(self.prec)+".pickle",'wb'))
-        
-    def getopdat(self,op):
-        od=[]
-        for da in self.statedat[1]:
-            od.append(dot(op,da.reshape((self.dim,self.dim))).trace().real)
-        return [self.statedat[0],od]
-    
-    def set_hamiltonian(self,ham):
-        #sets the hamiltonian of the system
-        self.checkdim(ham)
-        self.ham= -1j*self.comm(ham)
-        if self.dt>0: self.freeprop=expm(self.ham*self.dt/2).T 
-    
     def convergence_params(self,dt_float,dkmax_int,truncprec_int):
-        #sets the convergence parameters and calculates Makri coefficients is baths have already been added
+        #sets the convergence parameters
         self.dkmax=dkmax_int
         self.prec=truncprec_int
         self.dt=dt_float
+        #calculates Makri coefficients is baths have already been added
         if len(self.intparam)>1: self.intparam[2]=self.getcoeffs(self.intparam[1])
+        #sets free propagator
         self.freeprop=expm(self.ham*self.dt/2).T 
+                          
+    def getopdat(self,op):
+        #extracts data for time evolution of expectation of hilbert space operator op
+        #initialise data list
+        od=[]
+        #loop through reduced density matrix data converting back into hilbert space and taking expectation
+        for da in self.statedat[1]:
+            od.append(dot(op,da.reshape((self.dim,self.dim))).trace().real)
+        #retrun list of times and data list
+        return [self.statedat[0],od]
+    
+    def num_eta(self,T,Jw):
+        #function that gives a lineshape eta(t) for a given bath at temperature T,
+        #initially in thermal equilibrium  whith correlation function given by Eq.(14)
+               
+        def fo(w,T,t):
+            #fo is the time dependent part of theintegrand of Eq.(14) analytically twice 
+            #integrated over time from 0 to t
+            #for T=0 we analytically take the linit coth -> 1 and use special case
+            if T==0: return w**(-2)*((1-cos(w*t))+1j*(sin(w*t)-w*t))
+            else: return w**(-2)*(coth(w/(2*T))*(1-cos(w*t))+1j*(sin(w*t)-w*t))
+            return fo
+        
+        
+        def numint(t,T,nin): 
+            #this function numerically integrates J(w)fo(w,T,t)dw from 0 to infinity
+            #returning eta(t) for temperature T
+            
+            #eta(0) should always be 0
+            if t == 0:
+                eta = 0
+            else:
+                #integrate real and imaginary parts separately
+                numir = quad(lambda w: nin(w)*(fo(w,T,t).real),0,inf)
+                numii = quad(lambda w: nin(w)*(fo(w,T,t).imag),0,inf)
+                eta = numir[0]+1j*numii[0]
+            return eta
+        
+        def eta_func(t):
+            return numint(t,T,Jw)
+        
+        return eta_func
         
     def getcoeffs(self,eta_function):
-        #calculates makri coeffs by taking second order finite derivatives of an eta(t) function
+        #calculates makri coeffs by taking second order finite differences of an eta(t) function
         
         #tb is discretized eta(t) in form of a list
         tb=list(map(eta_function,array(range(self.dkmax+2))*self.dt))
@@ -137,17 +172,28 @@ class temposys(object):
                
     def add_bath(self,b_list):
         #attaches a bath to the system
+        #b_list should have form [hilbert space operator coupled to bath,eta(t) of bath]
+        
         self.intparam=[[self.comm(b_list[0]).diagonal(),self.acomm(b_list[0]).diagonal()],b_list[1],[]]
         #if the timestep has been set already then calculate Makri coeffs, else leave blank
         if self.dt>0: 
             self.intparam[2]=self.getcoeffs(b_list[1])
+        #find degeneracy which allows for partial summing of tensor network
+        #for degeneracy in 'alpha' legs of 4-leg b tensor only need to find degeneracy in commutator superoperator
+        #for degeneracy in 'j' legs need to find common degeneracy in commutators and anticommutators
         self.deg=[self.row_degeneracy(self.intparam[0][:1]),self.row_degeneracy(self.intparam[0])]
 
     def row_degeneracy(self,matrix):
+        #finds degenerate rows of a matrix
+        #needed instead of just the function 'unique' to find common degeneracy in comms and acomms
         mat=array(matrix)
+        #some magic here to get a vector b which has same degeneracy structure as rows of matrix mat
+        #I lifted this straight from a stackexchange thread
         b = ascontiguousarray(mat.T).view(dtype((void, (mat.T).dtype.itemsize * (mat.T).shape[1])))
+        #find degeneracy in b - 'unique' returns:
+        #[list of unique values,positions in b of the a single instance of each unique val,list same length of b with each element a position in the list of unique vals to map back to b]
         un=unique(b,return_index=True,return_inverse=True)
-        print('degen')
+        #dont explicitly need the unique vals (arent correct anyway since we converted mat to b) - just how many there are
         return [len(un[0]),un[1],un[2]]
     
     def itab(self,dk):
@@ -210,10 +256,6 @@ class temposys(object):
         for k in range(kpoints):
             
             t0=time()
-            #find current time physical state and store this in self.dat
-            #self.statedat[0].append(self.point*self.dt)
-            #self.statedat[1].append(self.state)
-            
             #contract and grow the mps using the mpo
             self.mps.contract_with_mpo(self.mpo,prec=10**(-0.1*self.prec),trunc_mode='accuracy')
             self.mps.insert_site(0,expand_dims(eye(self.dim**2),1))
@@ -232,22 +274,3 @@ class temposys(object):
             
             self.diagnostics.append([time()-t0,self.mps.bonddims(),self.mps.totsize()])
             dump(self.statedat,open(self.name+"_statedat_dkm"+str(self.dkmax)+"prec"+str(self.prec)+".pickle",'wb'))
-    
-    def num_eta(self,T,Jw):
-        def fo(w,T,t):
-            if T==0: return w**(-2)*((1-cos(w*t))+1j*(sin(w*t)-w*t))
-            else: return w**(-2)*(coth(w/(2*T))*(1-cos(w*t))+1j*(sin(w*t)-w*t))
-            return fo
-        def numint(t,T,nin): 
-            if t == 0:
-                eta = 0
-            else:
-                numir = quad(lambda w: nin(w)*(fo(w,T,t).real),0,inf)
-                numii = quad(lambda w: nin(w)*(fo(w,T,t).imag),0,inf)
-                eta = numir[0]+1j*numii[0]
-            return eta
-        
-        def eta_func(t):
-            return numint(t,T,Jw)
-        
-        return eta_func
