@@ -74,7 +74,13 @@ class temposys(object):
     
         self.mps=mps_block(0,0,0)           #blank mps block
         self.mpo=mpo_block(0,0,0)           #blank mpo block
-       
+    
+    def comm(self,op):
+        return kron(op,eye(self.dim)) - kron(eye(self.dim),op.T)
+    
+    def acomm(self,op):
+        return kron(op,eye(self.dim)) + kron(eye(self.dim),op.T)
+    
     def set_filename(self,name_string):
         #sets the name of the system
         if type(name_string)==str:
@@ -94,83 +100,74 @@ class temposys(object):
         self.checkdim(state_array)
         self.istate=state_array.reshape(self.dim**2)
     
+    def get_state(self):
+        self.state=dot(self.mps.readout(),self.sysprop(self.point-1))
+    
+    def savesys(self):
+        dump(self,open(self.name+"_sys_dkm"+str(self.dkmax)+"prec"+str(self.prec)+".pickle",'wb'))
+        
+    def getopdat(self,op):
+        od=[]
+        for da in self.statedat[1]:
+            od.append(dot(op,da.reshape((self.dim,self.dim))).trace().real)
+        return [self.statedat[0],od]
+    
     def set_hamiltonian(self,ham):
         #sets the hamiltonian of the system
         self.checkdim(ham)
-        self.ham= -1j*(kron(ham,eye(self.dim)) - kron(eye(self.dim),ham.conj()))
-        
-    def add_bath(self,bath_list):
-        #attaches a bath to the system
-        #takes a list whose elements have the form:
-        #[diagonal hilbert space system operator coupled to bath, eta(t) of bath]
-        for el in bath_list:
-            self.checkdim(el[0])
-            #constructing commutating and anticommutating operators for each coupling
-            comm=kron(el[0].diagonal(),ones(self.dim))-kron(ones(self.dim),el[0].diagonal())
-            acomm=kron(el[0].diagonal(),ones(self.dim))+kron(ones(self.dim),el[0].diagonal())
-            
-            #if the timestep has been set already then calculate Makri coeffs, else leave blank
-            if self.dt>0: 
-                self.intparam.append([[comm,acomm],el[1],self.getcoeffs(el[1])])
-            else: self.intparam.append([[comm,acomm],el[1],[]])
-            self.nbaths=self.nbaths+1
+        self.ham= -1j*self.comm(ham)
     
-    def find_degeneracy(self):
-        #finds degeneracy in tempo site tensor based on degeneracy in system coupling superoperators
-        
-        clis=zeros((2*self.nbaths,self.dim**2))
-        ii=0
-        for el in self.intparam:
-            clis[ii]=el[0][0]
-            clis[ii+self.nbaths]=el[0][1]
-            ii=ii+1
-            
-        b = ascontiguousarray(clis[:self.nbaths].T).view(dtype((void, (clis[:self.nbaths].T).dtype.itemsize * (clis[:self.nbaths].T).shape[1])))
-        uh=unique(b,return_index=True,return_inverse=True)
-        print('W/E degen: '+str(len(el[0][0]))+' to '+str(len(uh[0])))
-        b = ascontiguousarray(clis.T).view(dtype((void, (clis.T).dtype.itemsize * (clis.T).shape[1])))
-        uv=unique(b,return_index=True,return_inverse=True)
-        print('N/S degen: '+str(len(el[0][0]))+' to '+str(len(uv[0])))
-        self.deg=[[len(uh[0]),uh[1],uh[2]],[len(uv[0]),uv[1],uv[2]]]
-     
+    def sysprop(self,j):
+        #constructs system propagator at timestep j - the j dependence is pointless currently 
+        #but is built to allow for time dependent hamiltonians in future
+        return expm(self.ham*self.dt/2).T 
+    
     def convergence_params(self,dt_float,dkmax_int,truncprec_int):
         #sets the convergence parameters and calculates Makri coefficients is baths have already been added
         self.dkmax=dkmax_int
         self.prec=truncprec_int
         self.dt=dt_float
-        for el in self.intparam: el[2]=self.getcoeffs(el[1])
-
+        if len(self.intparam)>1: self.intparam[2]=self.getcoeffs(self.intparam[1])
+        
     def getcoeffs(self,eta_function):
         #calculates makri coeffs by taking second order finite derivatives of an eta(t) function
         
         #tb is discretized eta(t) in form of a list
         tb=list(map(eta_function,array(range(self.dkmax+2))*self.dt))
         etab=[tb[1]]
-        for jj in range(1,self.dkmax+1):
-            etab.append(tb[jj+1]-2*tb[jj]+tb[jj-1])
+        for jj in range(1,self.dkmax+1): etab.append(tb[jj+1]-2*tb[jj]+tb[jj-1])
         return etab
+               
+    def add_bath(self,b_list):
+        #attaches a bath to the system
+        #print(self.comm(b_list[0]).diagonal())
+        self.intparam=[[self.comm(b_list[0]).diagonal(),self.acomm(b_list[0]).diagonal()],b_list[1],[]]
+        #if the timestep has been set already then calculate Makri coeffs, else leave blank
+        if self.dt>0: 
+            self.intparam[2]=self.getcoeffs(b_list[1])
+        self.deg=[self.row_degeneracy(self.intparam[0][:1]),self.row_degeneracy(self.intparam[0])]
 
-    def sysprop(self,j):
-        #constructs system propagator at timestep j - the j dependence is pointless currently 
-        #but is built to allow for time dependent hamiltonians in future
-        return expm(self.ham*self.dt/2).T            
-                  
+    def row_degeneracy(self,matrix):
+        mat=array(matrix)
+        b = ascontiguousarray(mat.T).view(dtype((void, (mat.T).dtype.itemsize * (mat.T).shape[1])))
+        un=unique(b,return_index=True,return_inverse=True)
+        print('degen')
+        return [len(un[0]),un[1],un[2]]
+    
     def itab(self,dk):
-        #function to store the influence function I_dk as a table
-        #loop through all baths multiplyin in the corresponding matrix
-        vec1=zeros(self.dim**2)
-        vec2=zeros(self.dim**2)
-        for el in self.intparam:
-            #picking out the correct eta coeff
-            vec1=vec1+el[0][0]
-            eta_dk=el[2][dk]
-            #print(eta_dk)
-            vec2=vec2+eta_dk.real*el[0][0]+1j*eta_dk.imag*el[0][1]
+        #creates the rank-2 tensor I_dk(j,j') of Eq.(11) but without free propagator when dk=1
+        #acheives this by taking outer product of two rank-1 vectors to create Eq.(12) as rank-2 tensor
+        #then exponentiate each element - for multiple baths with diagonal system coupling 
+        #operators Eq.(12) is additive so sum then exponentiate
+        eta_dk=self.intparam[2][dk]
+        [Om,Op]=self.intparam[0]
+        vec1=-Om
+        vec2=eta_dk.real*Om+1j*eta_dk.imag*Op
         if dk>1:
             vec1=array([vec1[i] for i in self.deg[0][1]])
             vec2=array([vec2[i] for i in self.deg[1][1]])
         
-        iffac=2.7182818284590452353602874713527**(outer(vec2,-vec1))
+        iffac=2.7182818284590452353602874713527**(outer(vec2,vec1))
    
         if dk==0: return iffac.diagonal() #I_0 is a funtion of one varibale only so is converted to vector
         else: return iffac
@@ -200,12 +197,9 @@ class temposys(object):
         else:        
             return mpo_site(tens_in=tab)
     
-    def getstate(self):
-        self.state=dot(self.mps.readout(),self.sysprop(self.point-1))
                          
     def prep(self):
         #prepares system to be propagated once params have been set
-        self.find_degeneracy()
         self.mps=mps_block(0,0,0)           #blank mps block
         self.mpo=mpo_block(0,0,0)           #blank mpo block
         self.state=self.istate
@@ -216,7 +210,7 @@ class temposys(object):
         self.mps.insert_site(0,expand_dims(expand_dims(
                 dot(self.state,self.sysprop(0))*self.itab(0)
                                     ,-1),-1))
-        self.getstate()
+        self.get_state()
         
         #append first site to mpo to give a length=1 block
         self.mpo.append_mposite(self.temposite(1))
@@ -235,9 +229,7 @@ class temposys(object):
             self.mps.insert_site(0,expand_dims(eye(self.dim**2),1))
             #move the system forward a point
             self.point=self.point+1
-            self.getstate()
-            #replace dk=1 tempo site - only really necessary for time dependent hamiltonians
-            self.mpo.data[0]=self.temposite(1)
+            self.get_state()
             if self.point<self.dkmax+1:
                 #this is the growth stage: mpo has end site updated and a new site appended
                 self.mpo.data[-1]=self.temposite(self.point-1)
@@ -251,14 +243,7 @@ class temposys(object):
             self.diagnostics.append([time()-t0,self.mps.bonddims(),self.mps.totsize()])
             dump(self.statedat,open(self.name+"_statedat_dkm"+str(self.dkmax)+"prec"+str(self.prec)+".pickle",'wb'))
  
-    def savesys(self):
-        dump(self,open(self.name+"_sys_dkm"+str(self.dkmax)+"prec"+str(self.prec)+".pickle",'wb'))
-        
-    def getopdat(self,op):
-        od=[]
-        for da in self.statedat[1]:
-            od.append(dot(op,da.reshape((self.dim,self.dim))).trace().real)
-        return [self.statedat[0],od]
+    
     
 def fo(w,T,t):
     if T==0: return w**(-2)*((1-cos(w*t))+1j*(sin(w*t)-w*t))
