@@ -100,6 +100,8 @@ class temposys(object):
     
     def get_state(self):
         self.state=dot(self.mps.readout(),self.freeprop)
+        self.statedat[0].append(self.point*self.dt)
+        self.statedat[1].append(self.state)
     
     def savesys(self):
         dump(self,open(self.name+"_sys_dkm"+str(self.dkmax)+"prec"+str(self.prec)+".pickle",'wb'))
@@ -209,8 +211,8 @@ class temposys(object):
             
             t0=time()
             #find current time physical state and store this in self.dat
-            self.statedat[0].append(self.point*self.dt)
-            self.statedat[1].append(self.state)
+            #self.statedat[0].append(self.point*self.dt)
+            #self.statedat[1].append(self.state)
             
             #contract and grow the mps using the mpo
             self.mps.contract_with_mpo(self.mpo,prec=10**(-0.1*self.prec),trunc_mode='accuracy')
@@ -249,17 +251,3 @@ class temposys(object):
             return numint(t,T,Jw)
         
         return eta_func
-        
-def fo(w,T,t):
-    if T==0: return w**(-2)*((1-cos(w*t))+1j*(sin(w*t)-w*t))
-    else: return w**(-2)*(coth(w/(2*T))*(1-cos(w*t))+1j*(sin(w*t)-w*t))
-    return fo
-
-def numint(t,T,nin): 
-    if t == 0:
-        eta = 0
-    else:
-        numir = quad(lambda w: nin(w)*(fo(w,T,t).real),0,inf)
-        numii = quad(lambda w: nin(w)*(fo(w,T,t).imag),0,inf)
-        eta = numir[0]+1j*numii[0]
-    return eta

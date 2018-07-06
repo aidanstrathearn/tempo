@@ -6,8 +6,8 @@ Created on Thu Jan 25 17:26:32 2018
 @author: aidan
 """
 
-from temposys_class import temposys, numint
-from numpy import array, exp,log, diag, zeros,sqrt,insert,dot
+from temposys_class import temposys
+from numpy import array, exp, diag, zeros,sqrt
 from mpmath import besselj,sinc,cos,loggamma
 import matplotlib.pyplot as plt
 from time import time
