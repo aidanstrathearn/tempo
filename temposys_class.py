@@ -73,9 +73,6 @@ class temposys(object):
         #name of the system which will label all files the system outputs
         self.name='temp'
     
-        self.mps=mps_block(0,0,0)           #blank mps block
-        self.mpo=mpo_block(0,0,0)           #blank mpo block
-    
     def comm(self,op):
         return kron(op,eye(self.dim)) - kron(eye(self.dim),op.T)
     
@@ -138,7 +135,6 @@ class temposys(object):
                
     def add_bath(self,b_list):
         #attaches a bath to the system
-        #print(self.comm(b_list[0]).diagonal())
         self.intparam=[[self.comm(b_list[0]).diagonal(),self.acomm(b_list[0]).diagonal()],b_list[1],[]]
         #if the timestep has been set already then calculate Makri coeffs, else leave blank
         if self.dt>0: 
@@ -155,16 +151,11 @@ class temposys(object):
     def itab(self,dk):
         #creates the rank-2 tensor I_dk(j,j') of Eq.(11) but without free propagator when dk=1
         #acheives this by taking outer product of two rank-1 vectors to create Eq.(12) as rank-2 tensor
-        #then exponentiate each element - for multiple baths with diagonal system coupling 
-        #operators Eq.(12) is additive so sum then exponentiate
+        #then exponentiate each element
         eta_dk=self.intparam[2][dk]
         [Om,Op]=self.intparam[0]
         vec1=-Om
         vec2=eta_dk.real*Om+1j*eta_dk.imag*Op
-        if dk>1:
-            vec1=array([vec1[i] for i in self.deg[0][1]])
-            vec2=array([vec2[i] for i in self.deg[1][1]])
-        
         iffac=2.7182818284590452353602874713527**(outer(vec2,vec1))
    
         if dk==0: return iffac.diagonal() #I_0 is a funtion of one varibale only so is converted to vector
@@ -185,16 +176,15 @@ class temposys(object):
         
         else:
             tab=zeros((self.deg[1][0],self.deg[1][0],self.deg[0][0],self.deg[0][0]),dtype=complex)
-            for i1 in range(self.deg[1][0]):
-                for a1 in range(self.deg[0][0]):
-                    tab[i1][i1][a1][a1]=iffac[i1][a1]
+            for i1 in range(self.dim**2):
+                for a1 in range(self.dim**2):
+                    tab[self.deg[1][2][i1]][self.deg[1][2][i1]][self.deg[0][2][a1]][self.deg[0][2][a1]]=iffac[i1][a1]
 
         if dk>=self.dkmax or dk==self.point:
             #if at an end site then sum over east leg index and replace with 1d dummy leg
             return mpo_site(tens_in=expand_dims(dot(tab,ones(tab.shape[3])),-1))
         else:        
             return mpo_site(tens_in=tab)
-    
                          
     def prep(self):
         #prepares system to be propagated once params have been set
@@ -213,7 +203,7 @@ class temposys(object):
         #append first site to mpo to give a length=1 block
         self.mpo.append_mposite(self.temposite(1))
     
-    def prop(self,kpoints=1,savemps=False):
+    def prop(self,kpoints=1):
         #propagates the system for ksteps - system must be prepped first
         for k in range(kpoints):
             
@@ -240,9 +230,26 @@ class temposys(object):
             
             self.diagnostics.append([time()-t0,self.mps.bonddims(),self.mps.totsize()])
             dump(self.statedat,open(self.name+"_statedat_dkm"+str(self.dkmax)+"prec"+str(self.prec)+".pickle",'wb'))
- 
     
-    
+    def num_eta(self,T,Jw):
+        def fo(w,T,t):
+            if T==0: return w**(-2)*((1-cos(w*t))+1j*(sin(w*t)-w*t))
+            else: return w**(-2)*(coth(w/(2*T))*(1-cos(w*t))+1j*(sin(w*t)-w*t))
+            return fo
+        def numint(t,T,nin): 
+            if t == 0:
+                eta = 0
+            else:
+                numir = quad(lambda w: nin(w)*(fo(w,T,t).real),0,inf)
+                numii = quad(lambda w: nin(w)*(fo(w,T,t).imag),0,inf)
+                eta = numir[0]+1j*numii[0]
+            return eta
+        
+        def eta_func(t):
+            return numint(t,T,Jw)
+        
+        return eta_func
+        
 def fo(w,T,t):
     if T==0: return w**(-2)*((1-cos(w*t))+1j*(sin(w*t)-w*t))
     else: return w**(-2)*(coth(w/(2*T))*(1-cos(w*t))+1j*(sin(w*t)-w*t))
