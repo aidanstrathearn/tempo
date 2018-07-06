@@ -45,6 +45,7 @@ class temposys(object):
         #initial reduced system density matrix - stored separate from instantaneous state
         self.istate=array(self.dim**2)   
         
+        self.freeprop=array((self.dim**2,self.dim**2))
         #memory length/maximum length of the mps
         self.dkmax=0
         
@@ -101,7 +102,7 @@ class temposys(object):
         self.istate=state_array.reshape(self.dim**2)
     
     def get_state(self):
-        self.state=dot(self.mps.readout(),self.sysprop(self.point-1))
+        self.state=dot(self.mps.readout(),self.freeprop)
     
     def savesys(self):
         dump(self,open(self.name+"_sys_dkm"+str(self.dkmax)+"prec"+str(self.prec)+".pickle",'wb'))
@@ -116,11 +117,7 @@ class temposys(object):
         #sets the hamiltonian of the system
         self.checkdim(ham)
         self.ham= -1j*self.comm(ham)
-    
-    def sysprop(self,j):
-        #constructs system propagator at timestep j - the j dependence is pointless currently 
-        #but is built to allow for time dependent hamiltonians in future
-        return expm(self.ham*self.dt/2).T 
+        if self.dt>0: self.freeprop=expm(self.ham*self.dt/2).T 
     
     def convergence_params(self,dt_float,dkmax_int,truncprec_int):
         #sets the convergence parameters and calculates Makri coefficients is baths have already been added
@@ -128,6 +125,7 @@ class temposys(object):
         self.prec=truncprec_int
         self.dt=dt_float
         if len(self.intparam)>1: self.intparam[2]=self.getcoeffs(self.intparam[1])
+        self.freeprop=expm(self.ham*self.dt/2).T 
         
     def getcoeffs(self,eta_function):
         #calculates makri coeffs by taking second order finite derivatives of an eta(t) function
@@ -178,7 +176,7 @@ class temposys(object):
         #print(iffac)
         if dk==1:
             iffac=(iffac*self.itab(0))
-            iffac=iffac*dot(self.sysprop(self.point-1),self.sysprop(self.point))
+            iffac=iffac*dot(self.freeprop,self.freeprop)
             #initialise 4-leg tensor that will become mpo_site and loop through assigning elements
             tab=zeros((self.deg[1][0],self.dim**2,self.dim**2,self.deg[0][0]),dtype=complex)
             for i1 in range(self.dim**2):
@@ -208,7 +206,7 @@ class temposys(object):
 
         #propagte initial state half a timestep with sys prop and multiply in I_0 to get initial 1-leg ADT           
         self.mps.insert_site(0,expand_dims(expand_dims(
-                dot(self.state,self.sysprop(0))*self.itab(0)
+                dot(self.state,self.freeprop)*self.itab(0)
                                     ,-1),-1))
         self.get_state()
         
