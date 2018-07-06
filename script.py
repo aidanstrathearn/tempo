@@ -8,7 +8,6 @@ Created on Thu Jan 25 17:26:32 2018
 
 from temposys_class import temposys
 from numpy import array, exp, diag, zeros,sqrt
-from mpmath import besselj,sinc,cos,loggamma
 import matplotlib.pyplot as plt
 from time import time
 

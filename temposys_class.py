@@ -43,7 +43,7 @@ class temposys(object):
         self.istate=array(self.dim**2)   
         
         self.freeprop=array((self.dim**2,self.dim**2))
-        #memory length/maximum length of the mps
+        #memory length/maximum length of the mps, this is K in the paper
         self.dkmax=0
         
         #sets the precision of the singluar value truncation
@@ -187,13 +187,13 @@ class temposys(object):
         #finds degenerate rows of a matrix
         #needed instead of just the function 'unique' to find common degeneracy in comms and acomms
         mat=array(matrix)
-        #some magic here to get a vector b which has same degeneracy structure as rows of matrix mat
+        #some magic here to get a vector v which has same degeneracy structure as rows of matrix mat
         #I lifted this straight from a stackexchange thread
-        b = ascontiguousarray(mat.T).view(dtype((void, (mat.T).dtype.itemsize * (mat.T).shape[1])))
-        #find degeneracy in b - 'unique' returns:
-        #[list of unique values,positions in b of the a single instance of each unique val,list same length of b with each element a position in the list of unique vals to map back to b]
-        un=unique(b,return_index=True,return_inverse=True)
-        #dont explicitly need the unique vals (arent correct anyway since we converted mat to b) - just how many there are
+        v = ascontiguousarray(mat.T).view(dtype((void, (mat.T).dtype.itemsize * (mat.T).shape[1])))
+        #find degeneracy in v - 'unique' returns:
+        #[list of unique values,positions in v of the a single instance of each unique val,list same length of v with each element a position in the list of unique vals to map back to v]
+        un=unique(v,return_index=True,return_inverse=True)
+        #dont explicitly need the unique vals (arent correct anyway since we converted mat to v) - just how many there are
         return [len(un[0]),un[1],un[2]]
     
     def itab(self,dk):
@@ -210,26 +210,33 @@ class temposys(object):
         else: return iffac
     
     def temposite(self,dk):
-        #converts 2-leg I_dk table into a 4-leg tempo mpo_site object
+        #converts rank-2 itab tensor into a 4-leg tempo mpo_site object taking account of degeneracy
+        
+        #initialise tensor
         iffac=self.itab(dk)
-        #print(iffac)
         if dk==1:
-            iffac=(iffac*self.itab(0))
+            #if dk=1 then multiply in free propagator - note we also include I_0 here instead of b_0 like in Methods section
+            iffac=(iffac*self.itab(0))         
             iffac=iffac*dot(self.freeprop,self.freeprop)
-            #initialise 4-leg tensor that will become mpo_site and loop through assigning elements
+            
+            #initialise 4-leg tensor dimensions based on degeneracy
+            #for dk=1 we can only use the degeneracy/partial summing technique on legs not connected to freeprop
             tab=zeros((self.deg[1][0],self.dim**2,self.dim**2,self.deg[0][0]),dtype=complex)
+            #loop through assigning elements of 4-leg from elements the 2-leg
             for i1 in range(self.dim**2):
                 for a1 in range(self.dim**2):
                     tab[self.deg[1][2][i1]][i1][a1][self.deg[0][2][a1]]=iffac[i1][a1]
         
         else:
+            #initialise 4-leg tensor dimensions based on degeneracy
             tab=zeros((self.deg[1][0],self.deg[1][0],self.deg[0][0],self.deg[0][0]),dtype=complex)
+            #loop through assigning elements of 4-leg from elements the 2-leg
             for i1 in range(self.dim**2):
                 for a1 in range(self.dim**2):
                     tab[self.deg[1][2][i1]][self.deg[1][2][i1]][self.deg[0][2][a1]][self.deg[0][2][a1]]=iffac[i1][a1]
 
         if dk>=self.dkmax or dk==self.point:
-            #if at an end site then sum over east leg index and replace with 1d dummy leg
+            #if at an end site then sum over external leg and replace with 1d dummy leg
             return mpo_site(tens_in=expand_dims(dot(tab,ones(tab.shape[3])),-1))
         else:        
             return mpo_site(tens_in=tab)
@@ -238,36 +245,48 @@ class temposys(object):
         #prepares system to be propagated once params have been set
         self.mps=mps_block(0,0,0)           #blank mps block
         self.mpo=mpo_block(0,0,0)           #blank mpo block
+        
+        #set initial instantaneous state and list of states and times that will be calculated
         self.state=self.istate
-        self.statedat=[[0],[self.state],[self.dkmax,self.prec]]     #store initial state in data
-        self.point=1                        #move to first point
-
-        #propagte initial state half a timestep with sys prop and multiply in I_0 to get initial 1-leg ADT           
+        self.statedat=[[0],[self.state],[self.dkmax,self.prec]]
+        
+        #create initial rank-1 ADT, as in Eq.(17), as an mps object
+        #Note only propagating init state Del/2 due to symmetric trotter splitting
         self.mps.insert_site(0,expand_dims(expand_dims(
                 dot(self.state,self.freeprop)*self.itab(0)
                                     ,-1),-1))
+        
+        #append first site to mpo object to give 1-site TEMPO
+        self.mpo.append_mposite(self.temposite(1))
+        
+        #system now prepped at point 1
+        self.point=1  
+        #get the reduced state at point 1
         self.get_state()
         
-        #append first site to mpo to give a length=1 block
-        self.mpo.append_mposite(self.temposite(1))
+        
     
     def prop(self,kpoints=1):
         #propagates the system for ksteps - system must be prepped first
-        for k in range(kpoints):
-            
+        for k in range(kpoints):       
             t0=time()
-            #contract and grow the mps using the mpo
+            
+            #contract ADT with TEMPO performing svds and truncating with lambda_c=10**(-self.prec/10)*lambda_max
             self.mps.contract_with_mpo(self.mpo,prec=10**(-0.1*self.prec),trunc_mode='accuracy')
+            #grow the ADT by one site - this would be the b_0 tensor of Eq.(23), but is just a delta function since we moved I_0 to b_1
             self.mps.insert_site(0,expand_dims(eye(self.dim**2),1))
-            #move the system forward a point
+            #move the system forward a point and get the state data
             self.point=self.point+1
             self.get_state()
+          
             if self.point<self.dkmax+1:
-                #this is the growth stage: mpo has end site updated and a new site appended
+                #while  in the growth stage we need to update the 'K'th site to give it an extra leg
                 self.mpo.data[-1]=self.temposite(self.point-1)
+                #and then append the new end site
                 self.mpo.append_mposite(self.temposite(self.point)) 
             else:
-                #if not using new quapi and point>kmax just contract away end site of mpo
+                #after the growth stage the TEMPO remains the same at each step of propagation
+                #but we now need to contract one leg of the ADT as described in paper
                 self.mps.contract_end()
             print("point:" +str(self.point)+' time:'+str(time()-t0)+' dkm:'+str(self.dkmax)+' pp:'+str(self.prec))        
             print('max dim: '+str(max(self.mps.bonddims()))+' tot size: '+str(self.mps.totsize()))
