@@ -75,7 +75,7 @@ def spin_boson(S,Om,rho,T,Jw):
     system=temposys(S+1)
     system.set_hamiltonian(Om*Sx)
     system.set_state(rho)
-    system.add_bath([Sz,eta])     
+    system.add_bath([[Sz,eta]])     
     return system, Sz, Sx
 
 ###########################################################################################
