@@ -21,14 +21,13 @@ class temposys(object):
         #acts on d^2 size vector so has dimension (d^2,d^2)
         self.ham=zeros((self.dim**2,self.dim**2)) 
         
-        #intialise list that will contain all info about baths and couplings
-        #an element will contain:
-        #--commutator/anticommutator superoperators of system operator coupled to bath
-        #--the lineshape function, eta(t), of the bath
-        #--the makri coefficients eta_{kk'}, given by second order finite differences on eta(t)       
+        #intialise list that will contain all info about bath coupling
+        #--intparam[0]=commutator/anticommutator superoperators of system operator coupled to bath
+        #--intparam[1]=the lineshape function, eta(t), of the bath
+        #--intparam[2]=the makri coefficients eta_{kk'}, given by second order finite differences on eta(t)       
         self.intparam=[]                    
         
-        #seld.deg will contain degeneracy info of tempo site tensors:
+        #self.deg will contain degeneracy info of tempo site tensors:
         #for vertical and horizontal legs of tensor separately:
         #--the number of unique elements
         #--the positions in the multidimensional array of a single occurance of each unique element
@@ -105,7 +104,10 @@ class temposys(object):
         if self.dt>0: self.freeprop=expm(self.ham*self.dt/2).T 
                                         
     def get_state(self):
+        #readout reduced state from ADT by summing over indices - built in function of mps object
+        #also propagate reduced state a final half timestep under free propagation due to symmetric trotter splitting
         self.state=dot(self.mps.readout(),self.freeprop)
+        #append current time and state to the data list
         self.statedat[0].append(self.point*self.dt)
         self.statedat[1].append(self.state)
     
@@ -267,7 +269,7 @@ class temposys(object):
         
     
     def prop(self,kpoints=1):
-        #propagates the system for ksteps - system must be prepped first
+        #propagates the system for kpoints steps - system must be prepped first
         for k in range(kpoints):       
             t0=time()
             
@@ -288,8 +290,10 @@ class temposys(object):
                 #after the growth stage the TEMPO remains the same at each step of propagation
                 #but we now need to contract one leg of the ADT as described in paper
                 self.mps.contract_end()
-            print("point:" +str(self.point)+' time:'+str(time()-t0)+' dkm:'+str(self.dkmax)+' pp:'+str(self.prec))        
-            print('max dim: '+str(max(self.mps.bonddims()))+' tot size: '+str(self.mps.totsize()))
+            #print out the current point and time it took to contract
+            print("point: " +str(self.point)+'/'+str(kpoints)+'  time: '+str(time()-t0))
             
+            #obtain mps info of current ADT
             self.diagnostics.append([time()-t0,self.mps.bonddims(),self.mps.totsize()])
+            #dump the data for the reduced state to a pickle file
             dump(self.statedat,open(self.name+"_statedat_dkm"+str(self.dkmax)+"prec"+str(self.prec)+".pickle",'wb'))
