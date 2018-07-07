@@ -274,7 +274,7 @@ class temposys(object):
             t0=time()
             
             #contract ADT with TEMPO performing svds and truncating with lambda_c=10**(-self.prec/10)*lambda_max
-            self.mps.contract_with_mpo(self.mpo,prec=10**(-0.1*self.prec),trunc_mode='accuracy')
+            self.mps.contract_with_mpo(self.mpo,prec=10**(-0.1*self.prec))
             #grow the ADT by one site - this would be the b_0 tensor of Eq.(23), but is just a delta function since we moved I_0 to b_1
             self.mps.insert_site(0,expand_dims(eye(self.dim**2),1))
             #move the system forward a point and get the state data

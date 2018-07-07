@@ -3,11 +3,10 @@ import sys
 import copy as cp
 import numpy as np
 import scipy as sp
-from scipy.sparse.linalg import svds
 import ErrorHandling as err
 from numpy import linalg
 
-__all__ = ["TensMul","reshape_matrix_into_tens4d", "reshape_matrix_into_tens3d","reshape_tens4d_into_matrix", "reshape_tens3d_into_matrix", "compute_lapack_svd", "compute_arnoldi_svd", "truncate_svd_matrices", "set_trunc_params", "lapack_preferred", "sigma_dim"]
+__all__ = ["TensMul","reshape_matrix_into_tens4d", "reshape_matrix_into_tens3d","reshape_tens4d_into_matrix", "reshape_tens3d_into_matrix", "compute_lapack_svd", "truncate_svd_matrices", "set_trunc_params", "lapack_preferred", "sigma_dim"]
 
 def TensMul(tensA_in, tensB_in):
   #Prepare tensA, tensB --> both should be 4D arrays (should create copies to prevent unwanted modification)
@@ -153,12 +152,6 @@ def set_trunc_params(prec, trunc_mode, sigma_dim):
 
   return chi, eps
 
-
-
-#Decide whether to use Lapack or Arnoldi
-def lapack_preferred(dimT, Edim, chi):
-  return  True #(chi > 0.11*sigma_dim(dimT)) or (Edim == 1)
-      
 #Find sigma_dim = the total number of sigmas (i.e. untruncated)
 def sigma_dim(dimT):
   return min(dimT[0], dimT[1])
@@ -168,7 +161,6 @@ def compute_lapack_svd(theta, chi, eps):
 
   #Create a copy to prevent an accidental modification of theta
   ThetaTmp = cp.deepcopy(theta)
-  #print(ThetaTmp)
   #Compute Lapack SVD
   try:
       U, Sigma, VH = sp.linalg.svd(ThetaTmp, full_matrices=True,lapack_driver='gesvd')
@@ -181,41 +173,6 @@ def compute_lapack_svd(theta, chi, eps):
   accuracy_OK=True
 
   return U, U.conj().T, chi, accuracy_OK
-
-#Compute SVD using Arnoldi
-def compute_arnoldi_svd(theta, chi, eps):
-
-  #print('Starting Arnoldi SVD')
-
-  #Create a copy to prevent an accidental modification of theta
-  ThetaTmp = cp.deepcopy(theta)
-
-  #Shape of theta
-  dimT = np.asarray(theta.shape)
-
-  #If we are in 'accuracy' mode (eps < 1.0), reset chi to Arnoldi threshold 
-  if (eps < 1.0):
-      chi=int(np.ceil(0.11*sigma_dim(dimT)))
-
-  #Compute Arnoldi SVD
-  U, Sigma, VH = svds(ThetaTmp, k=chi, ncv=np.minimum(3*chi+1,dimT[1]), tol=10**(-5), which='LM', v0=None, maxiter=100*chi, return_singular_vectors=True)
-
-  #Have we achieved target accuracy? (such that truncErr < eps)
-  accuracy_OK = truncErr_below_eps(Sigma, eps)
-
-  if (not accuracy_OK):
-      #if not, repeat SVD with incremented chi
-      dChi = 2
-      chi = chi + dChi 
-      #print('Arnoldi SVD: target accuracy not achieved with chi = ', chi - dChi, ', increasing chi to ', chi)
-
-  else: 
-      #if yes, proceed to the truncation of svd matrices
-      #print('Arnoldi SVD: target accuracy achieved with chi = ', chi)
-      U, chi = truncate_svd_matrices(U, Sigma, chi, eps)
-
-  return U, U.conj().T, chi, accuracy_OK
-
 
 #Check if truncErr < eps
 def truncErr_below_eps(Sigma, eps):

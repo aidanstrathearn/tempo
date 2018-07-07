@@ -3,8 +3,6 @@ import sys
 import numpy as np
 import ErrorHandling as err
 from svd_functions import *
-#from MpsMpo_site_level_operations import mps_site, mpo_site
-
 
 ##########################################################################
 #   Class mpo_site    
@@ -54,7 +52,6 @@ class mpo_site(object):
 
     else:
         try:
-           #print(tens_in.shape)
            if len(tens_in.shape) != 4: raise err.MpoSiteShapeError
            if (Sdim is not None) or (Ndim is not None) or (Wdim is not None) or (Edim is not None): raise err.MpoSiteInputError
 
@@ -147,18 +144,12 @@ class mps_site(object):
     #Copy back svd results
     self.update_site(tens_in = reshape_matrix_into_tens3d(U, [self.SNdim, self.Wdim, chi]))
 
-    #Contract: Udag*theta*(mpsB)
-      
+    #Contract: Udag*theta*(mpsB)     
     dimst=other.m.shape
-    #print(dimst)
     tmpMps = np.reshape(np.swapaxes(other.m,0,1),(dimst[1],dimst[0]*dimst[2]))
-    #print(tmpMps.shape)
     tmpMps = np.dot(Udag,np.dot(theta,tmpMps))
-    #print(tmpMps.shape)
     tmpMps = np.reshape(tmpMps,(chi, dimst[0],dimst[2]))
-    #print(tmpMps.shape)
     tmpMps = np.swapaxes(tmpMps,0,1)
-
     other.update_site(tens_in = tmpMps)
 
  def zip_mps_mpo_sites(self, other, other_mpo, prec, trunc_mode): #mpsA = self, mpsB = other
@@ -174,11 +165,7 @@ class mps_site(object):
     accuracy_OK=False
 
     while(not accuracy_OK):
-
-       if lapack_preferred(dimT, other.Edim, chi):
-          U, Udag, chi, accuracy_OK = compute_lapack_svd(theta, chi, eps)
-       else:
-          U, Udag, chi, accuracy_OK = compute_arnoldi_svd(theta, chi, eps)
+      U, Udag, chi, accuracy_OK = compute_lapack_svd(theta, chi, eps)
 
     #Copy back svd results
     self.update_site(tens_in = reshape_matrix_into_tens3d(U, [self.SNdim, self.Wdim, chi]))
@@ -187,13 +174,9 @@ class mps_site(object):
     tmpMpsMpo = TensMul(other_mpo.m, other.m)
       
     dimst=tmpMpsMpo.shape
-    #print(dimst)
     tmpMpsMpo = np.reshape(np.swapaxes(tmpMpsMpo,0,1),(dimst[1],dimst[0]*dimst[2]))
-    #print(tmpMpsMpo.shape)
     tmpMpsMpo = np.dot(Udag,np.dot(theta,tmpMpsMpo))
-    #print(tmpMpsMpo.shape)
     tmpMpsMpo = np.reshape(tmpMpsMpo,(chi, dimst[0],dimst[2]))
-    #print(tmpMpsMpo.shape)
     tmpMpsMpo = np.swapaxes(tmpMpsMpo,0,1)
 
     other.update_site(tens_in = tmpMpsMpo)
@@ -318,10 +301,7 @@ class mps_block():
  def insert_site(self, axis, tensor_to_append):
 
     try:
-       #print(len(tensor_to_append.shape))
        if len(tensor_to_append.shape) != 3: raise err.MpsSiteInputError
-       #if tensor_to_append.shape[1] != 1: raise err.MpsAppendingError
-
        #Append a new site
        self.data.insert(axis,mps_site(tens_in = tensor_to_append))
        self.N_sites = self.N_sites + 1 
@@ -335,43 +315,33 @@ class mps_block():
        sys.exit()
 
  def contract_end(self):
+    #contracts one leg of ADT/mps as described in paper
     ns=self.N_sites
-
+    #first contract local leg of last site and store site as matrix, then delete site from MPS
     tens=np.einsum('ijk->j',self.data[ns-1].m)
     del self.data[ns-1]
-
     self.N_sites=self.N_sites-1
-    tens=np.einsum('i,jki',tens,self.data[ns-2].m)  
+    #multiply in last site with matrix to give new site, stored as tens
+    tens=np.einsum('i,jki',tens,self.data[ns-2].m)
+    #give tens 1d dummy leg and update last site of MPS
     tens=np.expand_dims(tens,-1)            
     self.data[ns-2].update_site(tens_in=tens)
 
  def readout(self):
+     #contracts all but the 'present time' leg of ADT/mps and returns 1-leg reduced density matrix
     l=len(self.data)
+    #for special case of rank-1 ADT just sum over 1d dummy legs and return
     if l==1:
         out=np.sum(np.sum(self.data[0].m,-1),-1)
         return out
-        
+    #other wise sum over all but 1-leg of last site, store as out, then successively
+    #sum legs of new end sites to make matrices then multiply into vector 'out'
     out=np.sum(np.sum(self.data[l-1].m,0),-1)
     for jj in range(l-2):
         out=np.dot(np.sum(self.data[l-2-jj].m,0),out)
-    out=np.dot(np.sum(self.data[0].m,1),out)  
+    out=np.dot(np.sum(self.data[0].m,1),out)
+    #after the last site, 'out' should now be the reduced density matrix
     return out           
-
- def copy_mps(self, mps_copy, copy_conj=False): 
-
-    #Initialize mps_copy
-    mps_copy.data=[]
-
-    #Note that Python numbers its lists from 0 to N-1!!!
-    if copy_conj==False: 
-       #copy the old mps_site data to the new mps_site
-       for site in range(self.N_sites):
-           mps_copy.data.append(mps_site(tens_in = self.data[site].m))
-
-    elif copy_conj==True: 
-       #copy the CONJ of old mps_site data to the new mps_site
-       for site in range(self.N_sites):
-           mps_copy.data.append(mps_site(tens_in = np.conj(self.data[site].m)))
 
  def canonicalize_mps(self, orth_centre, prec, trunc_mode): 
     #Left sweep
@@ -419,15 +389,12 @@ class mps_block():
     for i in range(self.N_sites):
         self.is_multiplied.append(False)
     
-    #self.reverse_mps_mpo_network(mpo_block) 
-    
     if (orth_centre > 0):
         self.left_sweep_mps_mpo(mpo_block, orth_centre, prec, trunc_mode) 
 
 
     if (orth_centre < self.N_sites):
-        self.reverse_mps_mpo_network(mpo_block) 
-        #print('reversing')
+        self.reverse_mps_mpo_network(mpo_block)
         self.left_sweep_mps_mpo(mpo_block, self.N_sites - orth_centre + int(orth_centre != 0), prec, trunc_mode)
         self.reverse_mps_mpo_network(mpo_block)
 
@@ -435,7 +402,6 @@ class mps_block():
     #(if Oc=N --> do backward sweep with Oc=0; if Oc=0 --> do backward sweep with Oc=N; else --> do both sweeps)
     if (orth_centre > 0): self.canonicalize_mps(0, prec, trunc_mode)
     if (orth_centre < self.N_sites): self.canonicalize_mps(self.N_sites, prec, trunc_mode)
-    #self.reverse_mps_mpo_network(mpo_block) 
     
  def left_sweep_mps_mpo(self, mpo_block, orth_centre, prec, trunc_mode): 
 
@@ -443,20 +409,13 @@ class mps_block():
     self.is_multiplied[0] = True
                   
     for site in range(1,orth_centre):
-        #print(site)
-        #print(self.is_multiplied)
-        #print('MULT & SVD at site ', site)
-        #print(self.data[site].m)
         if not self.is_multiplied[site]:
-            #print('first zip site: ' +str(site-1))
             self.data[site-1].zip_mps_mpo_sites(self.data[site], mpo_block.data[site], prec, trunc_mode)
             self.is_multiplied[site] = True
         else:
-            #print('SVD (no mult) at site ', site)
             self.data[site-1].svd_mps_site(self.data[site], prec, trunc_mode)
 
  def reverse_mps_mpo_network(self, mpo_block): 
-
     self.reverse_mps() 
     mpo_block.reverse_mpo() 
     self.is_multiplied.reverse()
@@ -472,6 +431,3 @@ class mps_block():
      for ss in range(self.N_sites):
          size=self.data[ss].m.shape[0]*self.data[ss].m.shape[1]*self.data[ss].m.shape[2]+size
      return size     
- 
- def applyop(self,op,site):
-     self.data[site].m=np.einsum('ij,jkl',op,self.data[site].m)

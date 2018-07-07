@@ -96,7 +96,7 @@ def Jw(w):
 
 #now set timestep and kmax
 Del=0.25
-dkmax=70
+dkmax=20
 
 #set up the spin boson model and get spin operators
 sbm,sz,sx=spin_boson(s,Om,rho,T,Jw)
