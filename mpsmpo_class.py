@@ -2,7 +2,7 @@ from __future__ import print_function
 import sys
 import numpy as np
 import ErrorHandling as err
-from svd_functions import *
+from svd_functions import TensMul, reshape_tens3d_into_matrix, reshape_matrix_into_tens3d, set_trunc_params, sigma_dim, compute_lapack_svd
 
 ##########################################################################
 #   Class mpo_site    
@@ -214,14 +214,7 @@ class mpo_block(object):
        else:
             self.data.append(mpo_site(local_dim, local_dim, opdim, opdim))
          
- def append_site(self, tensor_to_append):
-
-    #Append a new site
-    self.data.append(mpo_site(tens_in = tensor_to_append))
-    self.N_sites = self.N_sites + 1 
- 
  def append_mposite(self,mposite):
-
     #Append a new site
     self.data.append(mposite)
     self.N_sites = self.N_sites + 1
