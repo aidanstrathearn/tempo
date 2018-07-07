@@ -152,7 +152,7 @@ class mps_site(object):
     tmpMps = np.swapaxes(tmpMps,0,1)
     other.update_site(tens_in = tmpMps)
 
- def zip_mps_mpo_sites(self, other, other_mpo, prec, trunc_mode): #mpsA = self, mpsB = other
+ def zip_mps_mpo_sites(self, other, other_mpo, prec, trunc_mode):
 
     #Set dims of theta & construct theta matrix
     dimT = [self.SNdim * self.Wdim, self.Edim]
@@ -191,7 +191,6 @@ class mps_site(object):
 #   Looping over all sites of the MPS block do the following:
 #   Set Sdim,Ndim = local dimension of Hilbert/Liouville space at each site
 #   Set Wdim,Edim = operator bond dim to the west & to the east of a site 
-#   Note that operator bond dim = 1 at the ends of the MPO chain
 ########################################################################### 
 class mpo_block(object):
 
@@ -244,11 +243,6 @@ class mpo_block(object):
 #   of MPS, we will truncate the bond size chi0 to the target bond size = bond_dim
 #   (i.e. if chi0 > bond_dim, we truncate the full bond chi0 to bond_dim)
 #   
-#   Extra function - copy_mps_block:
-#   Creates a copy of the MPS = mps_copy with length N_sites
-#   if copy_conjugate = True, creates mps_copy = HC of the original MPS
-#   else, creates mps_copy = original MPS 
-#
 #   CAVEAT: here, we assume that SNdim = uniform over all MPS sites
 #   In the cases where this is not true, we'll need to make a slight 
 #   modification to this part of the code. 
@@ -384,7 +378,6 @@ class mps_block():
     
     if (orth_centre > 0):
         self.left_sweep_mps_mpo(mpo_block, orth_centre, prec, trunc_mode) 
-
 
     if (orth_centre < self.N_sites):
         self.reverse_mps_mpo_network(mpo_block)
