@@ -10,7 +10,7 @@ from scipy.integrate import quad
 from pickle import dump
 from time import time
 from scipy.linalg import expm
-from mpsmpo_class2 import mps_block, mpo_block, mpo_site
+from mpsmpo_class import mps_block, mpo_block, mpo_site
 
 class temposys(object):
     def __init__(self,hilbert_dim=2):
