@@ -113,9 +113,8 @@ def compute_lapack_svd(theta, chi, eps):
   #Truncate SVD matrices (accuracy_OK = True cause Lapack returns all sigmas and we'll always be able to reach 
   #sufficiently small trunc error or end up keeping all sigmas)
   U, chi = truncate_svd_matrices(U, Sigma, chi, eps)
-  accuracy_OK=True
 
-  return U, U.conj().T, chi, accuracy_OK
+  return U, U.conj().T, chi
 
 #Truncate SVD matrices as given by chi, eps
 def truncate_svd_matrices(U, Sigma, chi, eps):

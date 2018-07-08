@@ -103,13 +103,13 @@ class mps_site(object):
 
  def contract_with_mpo_site(self,mposite):
      #this contracts mps site with an mpo site to give another mps site with larger bond dims
-     #
-     #                          \
-     #     MPO site        W1 --O-- E1
-     #                          \                                 \
+     #                          
+     #     MPS site        W1 --O-- E1
+     #                          \                                 
      #                                      ---->     (W1 x W2) --O-- (E1 x E2)   MPS site
+     #                          \                                 \
+     #     MPO site        W2 --O-- E2
      #                          \
-     #     MPS site        W2 --O-- E2
      #
      #first swap axes of MPS/MPO sites to be in the right order to contract using numpy dot
      tensO=dot(swapaxes(mposite.m,1,3),swapaxes(self.m,0,1))
@@ -184,34 +184,84 @@ class mps_block():
        print("append_site: ", e.msg)
        sys.exit()
  
- def truncate_bond(self,bond_pos,prec,trunc_mode):
-     #truncates the 'bond_pos'th bond of the MPS using an SVD
-     #Set dims of theta & construct theta matrix
-    dims = [self.data[bond_pos-1].SNdim * self.data[bond_pos-1].Wdim, self.data[bond_pos-1].Edim]
-    theta = tensor_to_matrix(self.data[bond_pos-1].m, dims)
+ def truncate_bond(self,k,prec,trunc_mode):
+    #truncates the k'th bond of the MPS using an SVD
+    #
+    #                     
+    #          ---O---- Edim ----O---    
+    #             \              \   
+    #                    ^
+    #  (k-1)'th site     ^       k'th site
+    #                    ^
+    #                k'th bond
+    #
+    
+    #start by combining south and west legs of (k-1)'th site to give 2-leg tensor which is 
+    #the rectangular matrix we will perform the SVD on
+    #
+    #
+    #
+    #     Wdim  --O--  Edim  ----->      (Wdim x SNdim) --M-- Edim
+    #             \
+    #           SNdim                                  'theta'
+    #
+    dims = [self.data[k-1].SNdim * self.data[k-1].Wdim, self.data[k-1].Edim]
+    theta = tensor_to_matrix(self.data[k-1].m, dims)
 
     #Set trunc params
     chi, eps = set_trunc_params(prec, trunc_mode, min(dims[0],dims[1]))
 
-    #Compute SVD
-    U, Udag, chi, accuracy_OK = compute_lapack_svd(theta, chi, eps)
+    #Now perfom the SVD and truncate - both of these happen inside 'compute_lapack_svd'
+    
+    #SVD:
+    #
+    #  dim1 --M-- dim2  ---->  dim1 --U-- min(dim1,dim2) --S-- min(dim1,dim2) --V-- dim2
+    #
+    #  U, V unitary are matrices (U.Udag=I, V.Vdag=I)
+    #  S is diagonal matrix of the min(dim1,dim2) singular values
+    
+    #The truncation is actually on the unitary U rather than the singular values S
+    #We throw away columns of U that get multiplied into entries of the diagonal matrix S which 
+    #are smaller than a specified value to leave chi columns. 
+    #Then we can approximate the dim1-dimensional identity matrix
+    #
+    #   dim1 --I-- dim1  ---->   dim1 --U-- chi --Udag-- dim1  
+    #
+    #so we can express theta as
+    #
+    #     (Wdim x SNdim) --M-- Edim    ------>   (Wdim x SNdim) --U-- chi --Udag.M-- Edim
+    #
+    U, Udag, chi = compute_lapack_svd(theta, chi, eps)
 
-    #Copy back svd results
-    self.data[bond_pos-1].update_site(tens_in = matrix_to_tensor(U, [self.data[bond_pos-1].SNdim, self.data[bond_pos-1].Wdim, chi]))
-
-    #Contract: Udag*theta*(mpsB)  
-    tmpMps=tensor_to_matrix(self.data[bond_pos].m, (self.data[bond_pos].Wdim, self.data[bond_pos].SNdim * self.data[bond_pos].Edim))
+    #now retain  (Wdim x SNdim) --U-- chi to become the new (k-1)'th site after reshaping to 
+    #separate out west and south legs
+    self.data[k-1].update_site(tens_in = matrix_to_tensor(U, [self.data[k-1].SNdim, self.data[k-1].Wdim, chi]))
+    
+    #multiply chi --Udag.M-- Edim into the k'th site, practically carried out by converting to a matrix and
+    #then using numpy dot
+    
+    tmpMps=tensor_to_matrix(self.data[k].m, (self.data[k].Wdim, self.data[k].SNdim * self.data[k].Edim))
     tmpMps = dot(Udag,dot(theta,tmpMps))
-    tmpMps=matrix_to_tensor(tmpMps, (self.data[bond_pos].SNdim,chi,self.data[bond_pos].Edim))
-    self.data[bond_pos].update_site(tens_in = tmpMps)
+    tmpMps=matrix_to_tensor(tmpMps, (self.data[k].SNdim,chi,self.data[k].Edim))
+    self.data[k].update_site(tens_in = tmpMps)
+    #Overall:
+    #                     
+    #          ---U---  chi  ---Udag.M---O---    
+    #             \                      \   
+    #                    ^
+    #  (k-1)'th site     ^               k'th site
+    #                    ^
+    #             truncated k'th bond
+    #
+    #
     
  def reverse_mps(self):
-
-    self.data.reverse()
-
-    for site in range(self.N_sites):
-        MpsSiteT=transpose(self.data[site].m, (0,2,1))
-        self.data[site].update_site(tens_in = MpsSiteT)
+    #reverse the entire mps bock 
+    #first reverse the list of sites
+    self.data.reverse()  
+    #then site by site reverse the swap the east and west legs of the sites
+    for mpssite in self.data:
+        mpssite.update_site(tens_in = transpose(mpssite.m, (0,2,1)))
  
  def canonicalize_mps(self, orth_centre, prec, trunc_mode): 
     #Left sweep
