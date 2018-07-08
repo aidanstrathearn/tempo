@@ -117,41 +117,10 @@ class mps_site(object):
     self.update_site(tens_in = reshape_matrix_into_tens3d(U, [self.SNdim, self.Wdim, chi]))
 
     #Contract: Udag*theta*(mpsB)     
-    dimst=other.m.shape
-    tmpMps = np.reshape(np.swapaxes(other.m,0,1),(dimst[1],dimst[0]*dimst[2]))
+    tmpMps=reshape_tens3d_into_matrix(other.m, (other.Wdim,other.SNdim*other.Edim))
     tmpMps = np.dot(Udag,np.dot(theta,tmpMps))
-    tmpMps = np.reshape(tmpMps,(chi, dimst[0],dimst[2]))
-    tmpMps = np.swapaxes(tmpMps,0,1)
+    tmpMps=reshape_matrix_into_tens3d(tmpMps, (other.SNdim,chi,other.Edim))
     other.update_site(tens_in = tmpMps)
-
- def zip_mps_mpo_sites(self, other, other_mpo, prec, trunc_mode):
-
-    #Set dims of theta & construct theta matrix
-    dimT = [self.SNdim * self.Wdim, self.Edim]
-    theta = reshape_tens3d_into_matrix(self.m, dimT)
-
-    #Set trunc params
-    chi, eps = set_trunc_params(prec, trunc_mode, sigma_dim(dimT))
-
-    #initialize to False, loop until True
-    accuracy_OK=False
-
-    while(not accuracy_OK):
-      U, Udag, chi, accuracy_OK = compute_lapack_svd(theta, chi, eps)
-
-    #Copy back svd results
-    self.update_site(tens_in = reshape_matrix_into_tens3d(U, [self.SNdim, self.Wdim, chi]))
-
-    #Contract: Udag*theta*(mpoB--mpsB)
-    tmpMpsMpo = TensMul(other_mpo.m, other.m)
-      
-    dimst=tmpMpsMpo.shape
-    tmpMpsMpo = np.reshape(np.swapaxes(tmpMpsMpo,0,1),(dimst[1],dimst[0]*dimst[2]))
-    tmpMpsMpo = np.dot(Udag,np.dot(theta,tmpMpsMpo))
-    tmpMpsMpo = np.reshape(tmpMpsMpo,(chi, dimst[0],dimst[2]))
-    tmpMpsMpo = np.swapaxes(tmpMpsMpo,0,1)
-
-    other.update_site(tens_in = tmpMpsMpo)
     
 ##########################################################################
 #   Class mpo_block   
@@ -309,7 +278,10 @@ class mps_block():
                   
     for site in range(1,orth_centre):
         if not self.is_multiplied[site]:
-            self.data[site-1].zip_mps_mpo_sites(self.data[site], mpo_block.data[site], prec, trunc_mode)
+            self.data[site].update_site(tens_in = TensMul(mpo_block.data[site].m, self.data[site].m))
+            self.data[site-1].svd_mps_site(self.data[site], prec, trunc_mode)
+            
+            #self.data[site-1].zip_mps_mpo_sites(self.data[site], mpo_block.data[site], prec, trunc_mode)
             self.is_multiplied[site] = True
         else:
             self.data[site-1].svd_mps_site(self.data[site], prec, trunc_mode)

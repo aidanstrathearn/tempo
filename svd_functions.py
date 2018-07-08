@@ -41,15 +41,10 @@ def reshape_tens3d_into_matrix(tensIn, dimOut):
   dimIn = np.asarray(tensIn.shape)
 
   if (dimIn[2] == dimOut[1]):
-
-     for i in range(dimIn[0]):
-         matOut[i*dimIn[1] : (i+1)*dimIn[1] , :] = tensIn[i,:,:]
-
+     matOut=np.reshape(np.swapaxes(np.swapaxes(tensIn,1,2),0,1),(dimIn[2],dimIn[0]*dimIn[1]))
+     matOut=matOut.T
   elif (dimIn[1] == dimOut[0]):
-
-     for i in range(dimIn[0]):
-         matOut[: , i*dimIn[2] : (i+1)*dimIn[2]] = tensIn[i,:,:]
-
+     matOut=np.reshape(np.swapaxes(tensIn,0,1),(dimIn[1],dimIn[0]*dimIn[2]))
   return matOut
 
 #fraction: prec=fraction, set chi=int(prec*sigma_dim), eps=1.0

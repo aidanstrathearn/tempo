@@ -97,7 +97,7 @@ def spin_boson(S,Om,rho,T,Jw):
 # 
 # #now set timestep and kmax
 # Del=0.25
-# dkmax=20
+# dkmax=70
 # 
 # #set up the spin boson model and get spin operators
 # sbm,sz,sx=spin_boson(s,Om,rho,T,Jw)
