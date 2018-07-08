@@ -5,31 +5,31 @@ import numpy as np
 import scipy as sp
 import ErrorHandling as err
 from numpy import linalg
-from numpy import reshape
+from numpy import reshape, swapaxes, zeros, asarray
 ##### reshape matrix into tensor-3d with dims = dimOut ####
 def matrix_to_tensor(matIn, dimOut):
 
   if (matIn.shape[1] == dimOut[2]):
-     matIn=np.reshape(matIn,(dimOut[0], dimOut[1], dimOut[2]))
+     matIn=reshape(matIn,(dimOut[0], dimOut[1], dimOut[2]))
 
   elif (matIn.shape[0] == dimOut[1]):
-     matIn=np.swapaxes(np.reshape(matIn.T,(dimOut[0], dimOut[2], dimOut[1])),1,2)
+     matIn=swapaxes(reshape(matIn.T,(dimOut[0], dimOut[2], dimOut[1])),1,2)
   return matIn
 
 ##### reshape tensor-3d into matrix with dims = dimMat ####
 def tensor_to_matrix(tensIn, dimOut):
 
   #Initialize matrixOut to zeros
-  matOut=np.zeros((dimOut[0], dimOut[1]), dtype=complex)
+  matOut=zeros((dimOut[0], dimOut[1]), dtype=complex)
 
   #dims of tensIn
-  dimIn = np.asarray(tensIn.shape)
+  dimIn = asarray(tensIn.shape)
 
   if (dimIn[2] == dimOut[1]):
-     matOut=np.reshape(np.swapaxes(np.swapaxes(tensIn,1,2),0,1),(dimIn[2],dimIn[0]*dimIn[1]))
+     matOut=reshape(swapaxes(swapaxes(tensIn,1,2),0,1),(dimIn[2],dimIn[0]*dimIn[1]))
      matOut=matOut.T
   elif (dimIn[1] == dimOut[0]):
-     matOut=np.reshape(np.swapaxes(tensIn,0,1),(dimIn[1],dimIn[0]*dimIn[2]))
+     matOut=reshape(swapaxes(tensIn,0,1),(dimIn[1],dimIn[0]*dimIn[2]))
   return matOut
 
 #fraction: prec=fraction, set chi=int(prec*sigma_dim), eps=1.0
@@ -99,10 +99,6 @@ def set_trunc_params(prec, trunc_mode, sigma_dim):
 
   return chi, eps
 
-#Find sigma_dim = the total number of sigmas (i.e. untruncated)
-def sigma_dim(dimT):
-  return min(dimT[0], dimT[1])
-
 #Compute SVD using Lapack
 def compute_lapack_svd(theta, chi, eps):
 
@@ -121,12 +117,6 @@ def compute_lapack_svd(theta, chi, eps):
 
   return U, U.conj().T, chi, accuracy_OK
 
-#Check if truncErr < eps
-def truncErr_below_eps(Sigma, eps):
-    #Check if truncErr < eps
-    truncErr_vs_eps = (np.min(Sigma)/np.max(Sigma)) < eps
-    return truncErr_vs_eps
-
 #Truncate SVD matrices as given by chi, eps
 def truncate_svd_matrices(U, Sigma, chi, eps):
 
@@ -137,7 +127,7 @@ def truncate_svd_matrices(U, Sigma, chi, eps):
   #i.e. only if we've chosen 'accuracy mode' but not 'chi' or 'frac'
   if (eps < 1.0):
      for i in range(2, sdimTmp + 1):
-        if truncErr_below_eps(Sigma[0:i], eps):
+        if (min(Sigma[0:i])/max(Sigma[0:i])) < eps:
             chi = (i-1)
             break
         elif (i == sdimTmp): 

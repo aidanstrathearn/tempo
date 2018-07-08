@@ -1,8 +1,7 @@
 from __future__ import print_function
 import sys
-import numpy as np
 import ErrorHandling as err
-from svd_functions import tensor_to_matrix, matrix_to_tensor, set_trunc_params, sigma_dim, compute_lapack_svd
+from svd_functions import tensor_to_matrix, matrix_to_tensor, set_trunc_params, compute_lapack_svd
 from numpy import dot, swapaxes, transpose, ceil, expand_dims, reshape
 from numpy import sum as nsum
 ##########################################################################
@@ -103,8 +102,21 @@ class mps_site(object):
        sys.exit()
 
  def contract_with_mpo_site(self,mposite):
+     #this contracts mps site with an mpo site to give another mps site with larger bond dims
+     #
+     #                          \
+     #     MPO site        W1 --O-- E1
+     #                          \                                 \
+     #                                      ---->     (W1 x W2) --O-- (E1 x E2)   MPS site
+     #                          \
+     #     MPS site        W2 --O-- E2
+     #
+     #first swap axes of MPS/MPO sites to be in the right order to contract using numpy dot
      tensO=dot(swapaxes(mposite.m,1,3),swapaxes(self.m,0,1))
+     #get the dimensions of resulting 5-leg tensor
      sh=tensO.shape
+     #swap axis to put west legs together and east legs together then reshape into
+     #new 3-leg MPS and update
      tensO=reshape(swapaxes(swapaxes(tensO,1,2),2,3),(sh[0],sh[2]*sh[3],sh[1]*sh[4]))
      self.update_site(tens_in=tensO)
 
@@ -173,12 +185,13 @@ class mps_block():
        sys.exit()
  
  def truncate_bond(self,bond_pos,prec,trunc_mode):
+     #truncates the 'bond_pos'th bond of the MPS using an SVD
      #Set dims of theta & construct theta matrix
     dims = [self.data[bond_pos-1].SNdim * self.data[bond_pos-1].Wdim, self.data[bond_pos-1].Edim]
     theta = tensor_to_matrix(self.data[bond_pos-1].m, dims)
 
     #Set trunc params
-    chi, eps = set_trunc_params(prec, trunc_mode, sigma_dim(dims))
+    chi, eps = set_trunc_params(prec, trunc_mode, min(dims[0],dims[1]))
 
     #Compute SVD
     U, Udag, chi, accuracy_OK = compute_lapack_svd(theta, chi, eps)
@@ -214,8 +227,6 @@ class mps_block():
             self.truncate_bond(site,prec,trunc_mode)
         self.reverse_mps() 
  
- 
-     
  ########## Modes: 'accuracy', 'chi', 'fraction' ################################
 
  #Note the term "+ int(orth_centre != 0)" --> 
@@ -256,11 +267,13 @@ class mps_block():
     #contracts one leg of ADT/mps as described in paper
     ns=self.N_sites
     #first contract local leg of last site and store site as matrix, then delete site from MPS
-    tens=np.einsum('ijk->j',self.data[ns-1].m)
+    #tens=np.einsum('ijk->j',self.data[ns-1].m)
+    tens=nsum(self.data[ns-1].m,(0,2))
     del self.data[ns-1]
     self.N_sites=self.N_sites-1
     #multiply in last site with matrix to give new site, stored as tens
-    tens=np.einsum('i,jki',tens,self.data[ns-2].m)
+    #tens=np.einsum('i,jki',tens,self.data[ns-2].m)
+    tens=dot(self.data[ns-2].m,tens)
     #give tens 1d dummy leg and update last site of MPS
     tens=expand_dims(tens,-1)            
     self.data[ns-2].update_site(tens_in=tens)
