@@ -5,7 +5,7 @@ import numpy as np
 import scipy as sp
 import ErrorHandling as err
 from numpy import linalg
-
+from numpy import reshape
 ##### reshape matrix into tensor-3d with dims = dimOut ####
 def matrix_to_tensor(matIn, dimOut):
 

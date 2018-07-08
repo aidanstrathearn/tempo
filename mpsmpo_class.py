@@ -3,7 +3,8 @@ import sys
 import numpy as np
 import ErrorHandling as err
 from svd_functions import tensor_to_matrix, matrix_to_tensor, set_trunc_params, sigma_dim, compute_lapack_svd
-from numpy import dot, swapaxes
+from numpy import dot, swapaxes, transpose, ceil, expand_dims, reshape
+from numpy import sum as nsum
 ##########################################################################
 #   Class mpo_site    
 # 
@@ -102,9 +103,9 @@ class mps_site(object):
        sys.exit()
 
  def contract_with_mpo_site(self,mposite):
-     tensO=dot(np.swapaxes(mposite.m,1,3),np.swapaxes(self.m,0,1))
+     tensO=dot(swapaxes(mposite.m,1,3),swapaxes(self.m,0,1))
      sh=tensO.shape
-     tensO=np.reshape(np.swapaxes(np.swapaxes(tensO,1,2),2,3),(sh[0],sh[2]*sh[3],sh[1]*sh[4]))
+     tensO=reshape(swapaxes(swapaxes(tensO,1,2),2,3),(sh[0],sh[2]*sh[3],sh[1]*sh[4]))
      self.update_site(tens_in=tensO)
 
 ##########################################################################
@@ -132,7 +133,7 @@ class mpo_block(object):
 
     self.data.reverse()
     for site in range(self.N_sites):
-        MpoSiteT=np.transpose(self.data[site].m, (0,1,3,2))
+        MpoSiteT=transpose(self.data[site].m, (0,1,3,2))
         self.data[site].update_site(tens_in = MpoSiteT)
 
 ##########################################################################
@@ -196,7 +197,7 @@ class mps_block():
     self.data.reverse()
 
     for site in range(self.N_sites):
-        MpsSiteT=np.transpose(self.data[site].m, (0,2,1))
+        MpsSiteT=transpose(self.data[site].m, (0,2,1))
         self.data[site].update_site(tens_in = MpsSiteT)
  
  def canonicalize_mps(self, orth_centre, prec, trunc_mode): 
@@ -224,7 +225,7 @@ class mps_block():
  def contract_with_mpo(self, mpo_block, orth_centre=None, prec=0.0001, trunc_mode='accuracy'):          
 
     #default val of orth_centre
-    if orth_centre == None: orth_centre=int(np.ceil(0.5*self.N_sites))
+    if orth_centre == None: orth_centre=int(ceil(0.5*self.N_sites))
 
     if (orth_centre > 0):
         self.data[0].contract_with_mpo_site(mpo_block.data[0])   
@@ -261,7 +262,7 @@ class mps_block():
     #multiply in last site with matrix to give new site, stored as tens
     tens=np.einsum('i,jki',tens,self.data[ns-2].m)
     #give tens 1d dummy leg and update last site of MPS
-    tens=np.expand_dims(tens,-1)            
+    tens=expand_dims(tens,-1)            
     self.data[ns-2].update_site(tens_in=tens)
 
  def readout(self):
@@ -269,14 +270,14 @@ class mps_block():
     l=len(self.data)
     #for special case of rank-1 ADT just sum over 1d dummy legs and return
     if l==1:
-        out=np.sum(np.sum(self.data[0].m,-1),-1)
+        out=nsum(nsum(self.data[0].m,-1),-1)
         return out
     #other wise sum over all but 1-leg of last site, store as out, then successively
     #sum legs of new end sites to make matrices then multiply into vector 'out'
-    out=np.sum(np.sum(self.data[l-1].m,0),-1)
+    out=nsum(nsum(self.data[l-1].m,0),-1)
     for jj in range(l-2):
-        out=dot(np.sum(self.data[l-2-jj].m,0),out)
-    out=dot(np.sum(self.data[0].m,1),out)
+        out=dot(nsum(self.data[l-2-jj].m,0),out)
+    out=dot(nsum(self.data[0].m,1),out)
     #after the last site, 'out' should now be the reduced density matrix
     return out    
 
