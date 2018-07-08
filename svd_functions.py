@@ -6,21 +6,6 @@ import scipy as sp
 import ErrorHandling as err
 from numpy import linalg
 
-def TensMul(tensA_in, tensB_in):
-  #Prepare tensA, tensB --> both should be 4D arrays (should create copies to prevent unwanted modification)
-  if (tensA_in.ndim==3): tensA = tensA_in[np.newaxis, ...] 
-  else: tensA=tensA_in      
-  if (tensB_in.ndim==3): tensB = tensB_in[:, np.newaxis, ...] 
-  else: tensB=tensB_in
-  
-  tensO=np.dot(np.swapaxes(tensA,1,3),np.swapaxes(tensB,0,2))
-  rs=tensO.shape
-  tensO=np.reshape(np.swapaxes(tensO,1,4),(rs[0],rs[4],rs[2]*rs[3],rs[1]*rs[5]))
-  if (tensO.shape[0] == 1) and (tensO.shape[1] == 1): tensO = tensO[0,0,:,:]                                                      
-  elif (tensO.shape[0] == 1): tensO = tensO[0,:,:,:] 
-  elif (tensO.shape[1] == 1): tensO = tensO[:,0,:,:]
-  return tensO
-
 ##### reshape matrix into tensor-3d with dims = dimOut ####
 def reshape_matrix_into_tens3d(matIn, dimOut):
 
