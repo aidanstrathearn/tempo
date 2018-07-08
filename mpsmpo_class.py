@@ -2,8 +2,8 @@ from __future__ import print_function
 import sys
 import numpy as np
 import ErrorHandling as err
-from svd_functions import reshape_tens3d_into_matrix, reshape_matrix_into_tens3d, set_trunc_params, sigma_dim, compute_lapack_svd
-
+from svd_functions import tensor_to_matrix, matrix_to_tensor, set_trunc_params, sigma_dim, compute_lapack_svd
+from numpy import dot, swapaxes
 ##########################################################################
 #   Class mpo_site    
 # 
@@ -102,32 +102,11 @@ class mps_site(object):
        sys.exit()
 
  def contract_with_mpo_site(self,mposite):
-     tensO=np.dot(np.swapaxes(mposite.m,1,3),np.swapaxes(self.m,0,1))
+     tensO=dot(np.swapaxes(mposite.m,1,3),np.swapaxes(self.m,0,1))
      sh=tensO.shape
      tensO=np.reshape(np.swapaxes(np.swapaxes(tensO,1,2),2,3),(sh[0],sh[2]*sh[3],sh[1]*sh[4]))
      self.update_site(tens_in=tensO)
- 
- def svd_mps_site(self, other, prec, trunc_mode): 
 
-    #Set dims of theta & construct theta matrix
-    dimT = [self.SNdim * self.Wdim, self.Edim]
-    theta = reshape_tens3d_into_matrix(self.m, dimT)
-
-    #Set trunc params
-    chi, eps = set_trunc_params(prec, trunc_mode, sigma_dim(dimT))
-
-    #Compute SVD
-    U, Udag, chi, accuracy_OK = compute_lapack_svd(theta, chi, eps)
-
-    #Copy back svd results
-    self.update_site(tens_in = reshape_matrix_into_tens3d(U, [self.SNdim, self.Wdim, chi]))
-
-    #Contract: Udag*theta*(mpsB)     
-    tmpMps=reshape_tens3d_into_matrix(other.m, (other.Wdim,other.SNdim*other.Edim))
-    tmpMps = np.dot(Udag,np.dot(theta,tmpMps))
-    tmpMps=reshape_matrix_into_tens3d(tmpMps, (other.SNdim,chi,other.Edim))
-    other.update_site(tens_in = tmpMps)
-    
 ##########################################################################
 #   Class mpo_block   
 #
@@ -137,7 +116,6 @@ class mps_site(object):
 ########################################################################### 
 class mpo_block(object):
 
- #the procedure w/ local_dim, op_dim should be an instance instead! (or not?)
  def __init__(self):
          
     #Record the length of mpo_block
@@ -193,36 +171,10 @@ class mps_block():
        print("append_site: ", e.msg)
        sys.exit()
  
- def reverse_mps(self):
-
-    self.data.reverse()
-
-    for site in range(self.N_sites):
-        MpsSiteT=np.transpose(self.data[site].m, (0,2,1))
-        self.data[site].update_site(tens_in = MpsSiteT)
-
- def left_sweep_mps(self, orth_centre, prec, trunc_mode): 
-
-    for site in range(1,orth_centre):
-        self.truncate_bond(site,prec,trunc_mode)
-        #self.data[site-1].svd_mps_site(self.data[site], prec, trunc_mode)
- 
- def canonicalize_mps(self, orth_centre, prec, trunc_mode): 
-    #Left sweep
-    if (orth_centre > 0):
-        self.left_sweep_mps(orth_centre, prec, trunc_mode)
-   
-    #Right sweep = [left sweep through the reversed mps_block]
-    if (orth_centre < self.N_sites):
-        #Reverse the mps_block, perform left sweep, reverse back
-        self.reverse_mps()
-        self.left_sweep_mps(self.N_sites - orth_centre + int(orth_centre != 0), prec, trunc_mode)
-        self.reverse_mps() 
- 
  def truncate_bond(self,bond_pos,prec,trunc_mode):
      #Set dims of theta & construct theta matrix
     dims = [self.data[bond_pos-1].SNdim * self.data[bond_pos-1].Wdim, self.data[bond_pos-1].Edim]
-    theta = reshape_tens3d_into_matrix(self.data[bond_pos-1].m, dims)
+    theta = tensor_to_matrix(self.data[bond_pos-1].m, dims)
 
     #Set trunc params
     chi, eps = set_trunc_params(prec, trunc_mode, sigma_dim(dims))
@@ -231,13 +183,37 @@ class mps_block():
     U, Udag, chi, accuracy_OK = compute_lapack_svd(theta, chi, eps)
 
     #Copy back svd results
-    self.data[bond_pos-1].update_site(tens_in = reshape_matrix_into_tens3d(U, [self.data[bond_pos-1].SNdim, self.data[bond_pos-1].Wdim, chi]))
+    self.data[bond_pos-1].update_site(tens_in = matrix_to_tensor(U, [self.data[bond_pos-1].SNdim, self.data[bond_pos-1].Wdim, chi]))
 
     #Contract: Udag*theta*(mpsB)  
-    tmpMps=reshape_tens3d_into_matrix(self.data[bond_pos].m, (self.data[bond_pos].Wdim, self.data[bond_pos].SNdim * self.data[bond_pos].Edim))
-    tmpMps = np.dot(Udag,np.dot(theta,tmpMps))
-    tmpMps=reshape_matrix_into_tens3d(tmpMps, (self.data[bond_pos].SNdim,chi,self.data[bond_pos].Edim))
+    tmpMps=tensor_to_matrix(self.data[bond_pos].m, (self.data[bond_pos].Wdim, self.data[bond_pos].SNdim * self.data[bond_pos].Edim))
+    tmpMps = dot(Udag,dot(theta,tmpMps))
+    tmpMps=matrix_to_tensor(tmpMps, (self.data[bond_pos].SNdim,chi,self.data[bond_pos].Edim))
     self.data[bond_pos].update_site(tens_in = tmpMps)
+    
+ def reverse_mps(self):
+
+    self.data.reverse()
+
+    for site in range(self.N_sites):
+        MpsSiteT=np.transpose(self.data[site].m, (0,2,1))
+        self.data[site].update_site(tens_in = MpsSiteT)
+ 
+ def canonicalize_mps(self, orth_centre, prec, trunc_mode): 
+    #Left sweep
+    if (orth_centre > 0):
+        for site in range(1,orth_centre):
+            self.truncate_bond(site,prec,trunc_mode)
+   
+    #Right sweep = [left sweep through the reversed mps_block]
+    if (orth_centre < self.N_sites):
+        #Reverse the mps_block, perform left sweep, reverse back
+        self.reverse_mps()
+        for site in range(1,self.N_sites - orth_centre + int(orth_centre != 0)):
+            self.truncate_bond(site,prec,trunc_mode)
+        self.reverse_mps() 
+ 
+ 
      
  ########## Modes: 'accuracy', 'chi', 'fraction' ################################
 
@@ -250,49 +226,31 @@ class mps_block():
     #default val of orth_centre
     if orth_centre == None: orth_centre=int(np.ceil(0.5*self.N_sites))
 
-    #Initialize a boolean list (must re-init each time!) 
-    #to keep track which mps sites have been multiplied by the corresponding mpo sites
-    self.is_multiplied=[]
-    for i in range(self.N_sites):
-        self.is_multiplied.append(False)
-    
     if (orth_centre > 0):
-        self.left_sweep_mps_mpo(mpo_block, orth_centre, prec, trunc_mode) 
+        self.data[0].contract_with_mpo_site(mpo_block.data[0])   
+        for site in range(1,orth_centre):
+            self.data[site].contract_with_mpo_site(mpo_block.data[site])
+            self.truncate_bond(site,prec,trunc_mode)
 
     if (orth_centre < self.N_sites):
-        self.reverse_mps_mpo_network(mpo_block)
-        self.left_sweep_mps_mpo(mpo_block, self.N_sites - orth_centre + int(orth_centre != 0), prec, trunc_mode)
-        self.reverse_mps_mpo_network(mpo_block)
+        self.reverse_mps() 
+        mpo_block.reverse_mpo()
+        
+        self.data[0].contract_with_mpo_site(mpo_block.data[0])   
+        for site in range(1,self.N_sites - orth_centre + int(orth_centre != 0)-1):
+            self.data[site].contract_with_mpo_site(mpo_block.data[site])
+            self.truncate_bond(site,prec,trunc_mode)
+            
+        self.truncate_bond(self.N_sites - orth_centre + int(orth_centre != 0)-1,prec,trunc_mode)
+        
+        self.reverse_mps() 
+        mpo_block.reverse_mpo() 
 
     #Canonicalize MPS 
     #(if Oc=N --> do backward sweep with Oc=0; if Oc=0 --> do backward sweep with Oc=N; else --> do both sweeps)
     if (orth_centre > 0): self.canonicalize_mps(0, prec, trunc_mode)
     if (orth_centre < self.N_sites): self.canonicalize_mps(self.N_sites, prec, trunc_mode)
-    
- def left_sweep_mps_mpo(self, mpo_block, orth_centre, prec, trunc_mode): 
-    
-    self.data[0].contract_with_mpo_site(mpo_block.data[0])
-    
-    #self.data[0].update_site(tens_in = TensMul(mpo_block.data[0].m, self.data[0].m))
-    #print(self.data[0].m.shape)
-    self.is_multiplied[0] = True
-                  
-    for site in range(1,orth_centre):
-        if not self.is_multiplied[site]:
-            self.data[site].contract_with_mpo_site(mpo_block.data[site])
-            #self.data[site].update_site(tens_in = TensMul(mpo_block.data[site].m, self.data[site].m))
-            #self.data[site-1].svd_mps_site(self.data[site], prec, trunc_mode)
-            self.truncate_bond(site,prec,trunc_mode)
-            self.is_multiplied[site] = True
-        else:
-            #self.data[site-1].svd_mps_site(self.data[site], prec, trunc_mode)
-            self.truncate_bond(site,prec,trunc_mode)
 
- def reverse_mps_mpo_network(self, mpo_block): 
-    self.reverse_mps() 
-    mpo_block.reverse_mpo() 
-    self.is_multiplied.reverse()
- 
  def contract_end(self):
     #contracts one leg of ADT/mps as described in paper
     ns=self.N_sites
@@ -317,8 +275,8 @@ class mps_block():
     #sum legs of new end sites to make matrices then multiply into vector 'out'
     out=np.sum(np.sum(self.data[l-1].m,0),-1)
     for jj in range(l-2):
-        out=np.dot(np.sum(self.data[l-2-jj].m,0),out)
-    out=np.dot(np.sum(self.data[0].m,1),out)
+        out=dot(np.sum(self.data[l-2-jj].m,0),out)
+    out=dot(np.sum(self.data[0].m,1),out)
     #after the last site, 'out' should now be the reduced density matrix
     return out    
 

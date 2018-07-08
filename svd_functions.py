@@ -7,7 +7,7 @@ import ErrorHandling as err
 from numpy import linalg
 
 ##### reshape matrix into tensor-3d with dims = dimOut ####
-def reshape_matrix_into_tens3d(matIn, dimOut):
+def matrix_to_tensor(matIn, dimOut):
 
   if (matIn.shape[1] == dimOut[2]):
      matIn=np.reshape(matIn,(dimOut[0], dimOut[1], dimOut[2]))
@@ -17,7 +17,7 @@ def reshape_matrix_into_tens3d(matIn, dimOut):
   return matIn
 
 ##### reshape tensor-3d into matrix with dims = dimMat ####
-def reshape_tens3d_into_matrix(tensIn, dimOut):
+def tensor_to_matrix(tensIn, dimOut):
 
   #Initialize matrixOut to zeros
   matOut=np.zeros((dimOut[0], dimOut[1]), dtype=complex)
