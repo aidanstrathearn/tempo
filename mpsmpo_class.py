@@ -18,55 +18,41 @@ from svd_functions import TensMul, reshape_tens3d_into_matrix, reshape_matrix_in
 ########################################################################### 
 class mpo_site(object):
 
- def __init__(self, Sdim = None, Ndim = None, Wdim = None, Edim = None, tens_in = None):
+ def __init__(self, tens_in = None):
 
-    if (tens_in is None):
-        #define dims & init mpo_site tensor to all-zeros array
-        self.Sdim = Sdim; self.Ndim = Ndim; self.Wdim = Wdim; self.Edim = Edim
-        self.m = np.zeros((self.Sdim, self.Ndim, self.Wdim, self.Edim), dtype=complex)
+    try:
+       if len(tens_in.shape) != 4: raise err.MpoSiteShapeError
 
-    else:
-        try:
-           if len(tens_in.shape) != 4: raise err.MpoSiteShapeError
-           if (Sdim is not None) or (Ndim is not None) or (Wdim is not None) or (Edim is not None): raise err.MpoSiteInputError
+       #get dims from tens_in & set mpo_site to tens_in 
+       self.Sdim = tens_in.shape[0]; self.Ndim = tens_in.shape[1]
+       self.Wdim = tens_in.shape[2]; self.Edim = tens_in.shape[3]
+       self.m = tens_in
 
-           #get dims from tens_in & set mpo_site to tens_in 
-           self.Sdim = tens_in.shape[0]; self.Ndim = tens_in.shape[1]
-           self.Wdim = tens_in.shape[2]; self.Edim = tens_in.shape[3]
-           self.m = tens_in
+    except err.MpoSiteShapeError as e: 
+       print("mpo_site: ", e.msg)
+       sys.exit()
 
-        except err.MpoSiteShapeError as e: 
-           print("mpo_site: ", e.msg)
-           sys.exit()
+    except err.MpoSiteInputError as e:
+       print("mpo_site: ", e.msg)
+       sys.exit()
 
-        except err.MpoSiteInputError as e:
-           print("mpo_site: ", e.msg)
-           sys.exit()
+ def update_site(self, tens_in = None):
 
- def update_site(self, Sdim = None, Ndim = None, Wdim = None, Edim = None, tens_in = None):
+    try:
+       if len(tens_in.shape) != 4: raise err.MpoSiteShapeError
 
-    if (tens_in is None):
-        #define dims & set mpo_site tensor to all-zeros array
-        self.Sdim = Sdim; self.Ndim = Ndim; self.Wdim = Wdim; self.Edim = Edim
-        self.m = np.zeros((self.Sdim, self.Ndim, self.Wdim, self.Edim), dtype=complex)
+       #get dims from tens_in & set mpo_site to tens_in 
+       self.Sdim = tens_in.shape[0]; self.Ndim = tens_in.shape[1]
+       self.Wdim = tens_in.shape[2]; self.Edim = tens_in.shape[3]
+       self.m = tens_in
 
-    else:
-        try:
-           if len(tens_in.shape) != 4: raise err.MpoSiteShapeError
-           if (Sdim is not None) or (Ndim is not None) or (Wdim is not None) or (Edim is not None): raise err.MpoSiteInputError
+    except err.MpoSiteShapeError as e: 
+       print("mpo: update_site: ", e.msg)
+       sys.exit()
 
-           #get dims from tens_in & set mpo_site to tens_in 
-           self.Sdim = tens_in.shape[0]; self.Ndim = tens_in.shape[1]
-           self.Wdim = tens_in.shape[2]; self.Edim = tens_in.shape[3]
-           self.m = tens_in
-
-        except err.MpoSiteShapeError as e: 
-           print("mpo: update_site: ", e.msg)
-           sys.exit()
-
-        except err.MpoSiteInputError as e:
-           print("mpo: update_site: ", e.msg)
-           sys.exit()
+    except err.MpoSiteInputError as e:
+       print("mpo: update_site: ", e.msg)
+       sys.exit()
 
 ##########################################################################
 #   Class mps_site    
@@ -81,53 +67,39 @@ class mpo_site(object):
 ###########################################################################
 class mps_site(object):
 
- def __init__(self, SNdim = None, Wdim = None, Edim = None, tens_in = None):
+ def __init__(self,tens_in = None):
 
-    if (tens_in is None):
-        #define dims & init mpo_site tensor to all-zeros array
-        self.SNdim = SNdim; self.Wdim = Wdim; self.Edim = Edim
-        self.m = np.zeros((self.SNdim, self.Wdim, self.Edim), dtype=complex)
+    try:
+       if len(tens_in.shape) != 3: raise err.MpsSiteShapeError
 
-    else:
-        try:
-           if len(tens_in.shape) != 3: raise err.MpsSiteShapeError
-           if (SNdim is not None) or (Wdim is not None) or (Edim is not None): raise err.MpsSiteInputError
+       #get dims from tens_in & set mps_site to tens_in 
+       self.SNdim = tens_in.shape[0]; self.Wdim = tens_in.shape[1]; self.Edim = tens_in.shape[2]
+       self.m = tens_in
 
-           #get dims from tens_in & set mps_site to tens_in 
-           self.SNdim = tens_in.shape[0]; self.Wdim = tens_in.shape[1]; self.Edim = tens_in.shape[2]
-           self.m = tens_in
+    except err.MpsSiteShapeError as e: 
+       print("mps_site: ", e.msg)
+       sys.exit()
 
-        except err.MpsSiteShapeError as e: 
-           print("mps_site: ", e.msg)
-           sys.exit()
+    except err.MpsSiteInputError as e:
+       print("mps_site: ", e.msg)
+       sys.exit()
 
-        except err.MpsSiteInputError as e:
-           print("mps_site: ", e.msg)
-           sys.exit()
+ def update_site(self, tens_in = None):
 
- def update_site(self, SNdim = None, Wdim = None, Edim = None, tens_in = None):
+    try:
+       if len(tens_in.shape) != 3: raise err.MpsSiteShapeError
 
-    if (tens_in is None):
-        #define dims & init mpo_site tensor to all-zeros array
-        self.SNdim = SNdim; self.Wdim = Wdim; self.Edim = Edim
-        self.m = np.zeros((self.SNdim, self.Wdim, self.Edim), dtype=complex)
+       #get dims from tens_in & set mps_site to tens_in 
+       self.SNdim = tens_in.shape[0]; self.Wdim = tens_in.shape[1]; self.Edim = tens_in.shape[2]
+       self.m = tens_in
 
-    else:
-        try:
-           if len(tens_in.shape) != 3: raise err.MpsSiteShapeError
-           if (SNdim is not None) or (Wdim is not None) or (Edim is not None): raise err.MpsSiteInputError
+    except err.MpsSiteShapeError as e: 
+       print("mps: update_site: ", e.msg)
+       sys.exit()
 
-           #get dims from tens_in & set mps_site to tens_in 
-           self.SNdim = tens_in.shape[0]; self.Wdim = tens_in.shape[1]; self.Edim = tens_in.shape[2]
-           self.m = tens_in
-
-        except err.MpsSiteShapeError as e: 
-           print("mps: update_site: ", e.msg)
-           sys.exit()
-
-        except err.MpsSiteInputError as e:
-           print("mps: update_site: ", e.msg)
-           sys.exit()
+    except err.MpsSiteInputError as e:
+       print("mps: update_site: ", e.msg)
+       sys.exit()
 
  def svd_mps_site(self, other, prec, trunc_mode): 
 
@@ -187,31 +159,16 @@ class mps_site(object):
 #   Synopsis:
 #   Defines a block of MPO sites (i.e. a 4-leg tensor at each site)
 #   with the total length of MPO block = N_sites.
-#
-#   Looping over all sites of the MPS block do the following:
-#   Set Sdim,Ndim = local dimension of Hilbert/Liouville space at each site
-#   Set Wdim,Edim = operator bond dim to the west & to the east of a site 
 ########################################################################### 
 class mpo_block(object):
 
  #the procedure w/ local_dim, op_dim should be an instance instead! (or not?)
- def __init__(self, local_dim, opdim, N_sites):
+ def __init__(self):
          
     #Record the length of mpo_block
-    self.N_sites = N_sites
-
+    self.N_sites = 0
     #initialize list of mpo_sites
     self.data = []
-
-    #Note that Python numbers its lists from 0 to N-1!!!
-    for site in range(N_sites):
-
-       if site == 0:
-            self.data.append(mpo_site(local_dim, local_dim, 1, opdim))
-       elif site == N_sites-1:
-            self.data.append(mpo_site(local_dim, local_dim, opdim, 1))
-       else:
-            self.data.append(mpo_site(local_dim, local_dim, opdim, opdim))
          
  def append_mposite(self,mposite):
     #Append a new site
@@ -231,59 +188,19 @@ class mpo_block(object):
 #   Synopsis:
 #   Defines a block of MPS sites (i.e. a 3-leg tensor at each site)
 #   with the total length of MPS block = N_sites.
-#
-#   Looping over all sites of the MPS block do the following:
-#   Set SNdim = local dimension of Hilbert/Liouville space at each site
-#   Set Wdim,Edim = the bond sizes to the west & to the east of a site 
-#   
-#   Since MPS is constructed by series of SVDs applied to the original state, 
-#   the maximum (untruncated) bond size to the west of MPS site 
-#   (appearing after SVD) can be: chi0 = min{d^{site}, d^(N-site)}. 
-#   To avoid the exp growth of the bond size as we go further away from the ends
-#   of MPS, we will truncate the bond size chi0 to the target bond size = bond_dim
-#   (i.e. if chi0 > bond_dim, we truncate the full bond chi0 to bond_dim)
-#   
-#   CAVEAT: here, we assume that SNdim = uniform over all MPS sites
-#   In the cases where this is not true, we'll need to make a slight 
-#   modification to this part of the code. 
 ########################################################################### 
 class mps_block():
 
- def __init__(self, local_dim, bond_dim, N_sites):
+ def __init__(self):
 
     #set the length of mps_block
-    self.N_sites = N_sites
+    self.N_sites = 0
 
     #initialize list of mps_sites
     self.data = []
 
     #keep track of sites multiplied by MPO
     self.is_multiplied=[]
-
-    #Note that Python numbers its lists from 0 to N-1!!!
-    for site in range(N_sites):
-
-       #Distance from the chain end below which we should consider rescaling. 
-       #We should not even try to calculate bond_dim**site if site is too far 
-       #from the end as this might lead to an integer overflow.
-       cutoff_distance = np.ceil(np.log(bond_dim)/np.log(local_dim))
-
-       #Determine west_dim for each site
-       west_distance = np.minimum(site, N_sites-site)
-       if west_distance < cutoff_distance:
-            west_dim=np.minimum(bond_dim, local_dim**west_distance)
-       else:
-            west_dim=bond_dim
-
-       #Determine east_dim for each site
-       east_distance = np.minimum(site+1, N_sites-(site+1))
-       if east_distance < cutoff_distance:
-            east_dim=np.minimum(bond_dim, local_dim**east_distance)
-       else:
-            east_dim=bond_dim
-     
-       #Create a new mps_site
-       self.data.append(mps_site(local_dim, west_dim, east_dim))
        
  def insert_site(self, axis, tensor_to_append):
 
@@ -354,10 +271,6 @@ class mps_block():
 
     for site in range(1,orth_centre):
         self.data[site-1].svd_mps_site(self.data[site], prec, trunc_mode)
-        
- def delete_site(self,site):
-     del self.data[site]
-     self.N_sites=self.N_sites-1
 
  ########## Modes: 'accuracy', 'chi', 'fraction' ################################
 

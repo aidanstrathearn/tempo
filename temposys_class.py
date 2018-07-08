@@ -10,7 +10,7 @@ from scipy.integrate import quad
 from pickle import dump
 from time import time
 from scipy.linalg import expm
-from mpsmpo_class import mps_block, mpo_block, mpo_site
+from mpsmpo_class2 import mps_block, mpo_block, mpo_site
 
 class temposys(object):
     def __init__(self,hilbert_dim=2):
@@ -245,8 +245,8 @@ class temposys(object):
                          
     def prep(self):
         #prepares system to be propagated once params have been set
-        self.mps=mps_block(0,0,0)           #blank mps block
-        self.mpo=mpo_block(0,0,0)           #blank mpo block
+        self.mps=mps_block()           #blank mps block
+        self.mpo=mpo_block()           #blank mpo block
         
         #set initial instantaneous state and list of states and times that will be calculated
         self.state=self.istate
