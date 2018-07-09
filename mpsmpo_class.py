@@ -2,8 +2,25 @@ from __future__ import print_function
 import sys
 import ErrorHandling as err
 from svd_functions import tensor_to_matrix, matrix_to_tensor, set_trunc_params, compute_lapack_svd
-from numpy import dot, swapaxes, transpose, ceil, expand_dims, reshape
+from numpy import dot, swapaxes, transpose, ceil, expand_dims, reshape, eye
 from numpy import sum as nsum
+
+#==============================================================================
+# Note we refer to tensors here as having North/South/East/West legs -- graphically these labels
+# have the usual meaning (North=Up, West=Left etc.) when the tensor network 
+# diagrams in the paper are rotated 180 degrees
+# 
+# That is, our ADT/MPS legs point downwards here and the 'present' timepoint leg is 
+# to the left -- python list element 0 in list language
+#==============================================================================
+
+
+
+######################################################################################################
+##########################################  SITE CLASSES  ###########################################
+######################################################################################################
+
+
 ##########################################################################
 #   Class mpo_site    
 # 
@@ -11,6 +28,7 @@ from numpy import sum as nsum
 #   Sdim, Ndim = dimensions of the South & North legs 
 #                      (i.e. 'local dims' of MPO site)
 #   Wdim, Edim = dimensions of West & East legs (i.e. 'bond dims' of MPO site)
+#   m = the multi-dimensional numpy array representing the tensor
 #
 #   Synopsis:
 #   Defines a single site of MPO - a rank-4 tensor with 4 legs
@@ -60,7 +78,7 @@ class mpo_site(object):
 #   Attributes: 
 #   SNdim = dimension of the South-North leg (i.e. 'local dim' of MPS site)
 #   Wdim, Edim = dimensions of West & East legs (i.e. 'bond dims' of MPS site)
-#
+#   m = the multi-dimensional numpy array representing the tensor
 #   Synopsis:
 #   Defines a single site of MPS - a rank-3 tensor with 3 legs
 #
@@ -120,20 +138,16 @@ class mps_site(object):
      tensO=reshape(swapaxes(swapaxes(tensO,1,2),2,3),(sh[0],sh[2]*sh[3],sh[1]*sh[4]))
      self.update_site(tens_in=tensO)
 
-##########################################################################
-#   Class mpo_block   
-#
-#   Synopsis:
-#   Defines a block of MPO sites (i.e. a 4-leg tensor at each site)
-#   with the total length of MPO block = N_sites.
-########################################################################### 
+######################################################################################################
+#########################################  BLOCK CLASSES  #########################################
+######################################################################################################
+
+
 class mpo_block(object):
 
  def __init__(self):
-         
-    #Record the length of mpo_block
+    #keep track of how long the block is 
     self.N_sites = 0
-    #initialize list of mpo_sites
     self.data = []
          
  def append_mposite(self,mposite):
@@ -148,26 +162,22 @@ class mpo_block(object):
         MpoSiteT=transpose(self.data[site].m, (0,1,3,2))
         self.data[site].update_site(tens_in = MpoSiteT)
 
-##########################################################################
-#   Class mps_block   
-#
-#   Synopsis:
-#   Defines a block of MPS sites (i.e. a 3-leg tensor at each site)
-#   with the total length of MPS block = N_sites.
-########################################################################### 
 class mps_block():
 
- def __init__(self):
-
+ def __init__(self,prec,trunc='accuracy'):
+    #initialise an mps by stating what precision and what truncation method
+    #are going to be used to store it
+    
     #set the length of mps_block
     self.N_sites = 0
 
     #initialize list of mps_sites
     self.data = []
-
-    #keep track of sites multiplied by MPO
-    self.is_multiplied=[]
-       
+     
+    self.precision=prec
+    
+    self.trunc_mode=trunc
+    
  def insert_site(self, axis, tensor_to_append):
 
     try:
@@ -184,18 +194,21 @@ class mps_block():
        print("append_site: ", e.msg)
        sys.exit()
  
- def truncate_bond(self,k,prec,trunc_mode):
-    #truncates the k'th bond of the MPS using an SVD
+ def truncate_bond(self,k):
+    
+    #truncates the k'th bond of the MPS using an SVD using method self.trunc_mode and precision self.precision
     #
     #                     
-    #          ---O---- Edim ----O---    
+    #          ---O---  Edim  ---O---                   
     #             \              \   
     #                    ^
     #  (k-1)'th site     ^       k'th site
     #                    ^
     #                k'th bond
     #
-    
+    #If there are N sites then there are only N-1 bonds so...
+    if k<1 or k>self.N_sites-1:
+        return 0
     #start by combining south and west legs of (k-1)'th site to give 2-leg tensor which is 
     #the rectangular matrix we will perform the SVD on
     #
@@ -209,7 +222,7 @@ class mps_block():
     theta = tensor_to_matrix(self.data[k-1].m, dims)
 
     #Set trunc params
-    chi, eps = set_trunc_params(prec, trunc_mode, min(dims[0],dims[1]))
+    chi, eps = set_trunc_params(self.precision, self.trunc_mode, min(dims[0],dims[1]))
 
     #Now perfom the SVD and truncate - both of these happen inside 'compute_lapack_svd'
     
@@ -244,7 +257,7 @@ class mps_block():
     tmpMps = dot(Udag,dot(theta,tmpMps))
     tmpMps=matrix_to_tensor(tmpMps, (self.data[k].SNdim,chi,self.data[k].Edim))
     self.data[k].update_site(tens_in = tmpMps)
-    #Overall:
+    #Overall then we are left with:
     #                     
     #          ---U---  chi  ---Udag.M---O---    
     #             \                      \   
@@ -262,71 +275,61 @@ class mps_block():
     #then site by site reverse the swap the east and west legs of the sites
     for mpssite in self.data:
         mpssite.update_site(tens_in = transpose(mpssite.m, (0,2,1)))
- 
- def canonicalize_mps(self, orth_centre, prec, trunc_mode): 
-    #Left sweep
-    if (orth_centre > 0):
-        for site in range(1,orth_centre):
-            self.truncate_bond(site,prec,trunc_mode)
-   
-    #Right sweep = [left sweep through the reversed mps_block]
-    if (orth_centre < self.N_sites):
-        #Reverse the mps_block, perform left sweep, reverse back
-        self.reverse_mps()
-        for site in range(1,self.N_sites - orth_centre + int(orth_centre != 0)):
-            self.truncate_bond(site,prec,trunc_mode)
-        self.reverse_mps() 
- 
- ########## Modes: 'accuracy', 'chi', 'fraction' ################################
-
- #Note the term "+ int(orth_centre != 0)" --> 
- #on [R->L] sweep we reverse Oc to N - Oc + 1, so that all bonds have been through svd 
- #(in particular, the bond to the right of Oc, which is skipped if we reverse Oc to N - Oc instead)
- #If Oc=0 --> reverse to N - Oc instead, cause there's no bond (and no sites) to the right of Oc (so nothing to svd)
- def contract_with_mpo(self, mpo_block, orth_centre=None, prec=0.0001, trunc_mode='accuracy'):          
-
-    #default val of orth_centre
+    
+ def canonicalize_mps(self, orth_centre): 
+    #systematically truncate all bonds of mps - orth_centre is point in mps to stop
+    #before truncating from the other end of mps - acheived by reversing mps then using exact same
+    #truncation procedure until the orth_centre. then reverses back to original order
+    for jj in range(1,orth_centre):
+        self.truncate_bond(jj)
+    self.reverse_mps()
+    for jj in range(1,self.N_sites - orth_centre+1):
+        self.truncate_bond(jj)
+    self.reverse_mps()
+    
+ def contract_with_mpo(self, mpo_block, orth_centre=None):          
+    #function to contract an mps with an mpo site by site performing truncations at each site
+    
+    #default val of orth_centre is the actual centre of the mps
     if orth_centre == None: orth_centre=int(ceil(0.5*self.N_sites))
+    #contract first sites of MPS/MPO together
+    self.data[0].contract_with_mpo_site(mpo_block.data[0])
+    #iteratively contract in mpo sites and immediately truncate the 
+    #bond connecting to the previous mps site up until the orth_centre
+    for site in range(1,orth_centre):
+        self.data[site].contract_with_mpo_site(mpo_block.data[site])
+        self.truncate_bond(site)
+    
+    #now reverse the mps and mpo and repeat as above up until all mpo sites have been contracted in
+    self.reverse_mps() 
+    mpo_block.reverse_mpo()
+    #if statement for special case of a 1 site mps
+    if self.N_sites>1: self.data[0].contract_with_mpo_site(mpo_block.data[0])   
+    for site in range(1,self.N_sites - orth_centre - int(orth_centre == 0)):
+        self.data[site].contract_with_mpo_site(mpo_block.data[site])
+        self.truncate_bond(site)
+    #truncate last bond that links the two halfs of the mps we have seperately swept through above  
+    self.truncate_bond(self.N_sites - orth_centre - int(orth_centre == 0))
+    #reverse mps and mpo back to original order
+    self.reverse_mps() 
+    mpo_block.reverse_mpo() 
 
-    if (orth_centre > 0):
-        self.data[0].contract_with_mpo_site(mpo_block.data[0])   
-        for site in range(1,orth_centre):
-            self.data[site].contract_with_mpo_site(mpo_block.data[site])
-            self.truncate_bond(site,prec,trunc_mode)
-
-    if (orth_centre < self.N_sites):
-        self.reverse_mps() 
-        mpo_block.reverse_mpo()
-        
-        self.data[0].contract_with_mpo_site(mpo_block.data[0])   
-        for site in range(1,self.N_sites - orth_centre + int(orth_centre != 0)-1):
-            self.data[site].contract_with_mpo_site(mpo_block.data[site])
-            self.truncate_bond(site,prec,trunc_mode)
-            
-        self.truncate_bond(self.N_sites - orth_centre + int(orth_centre != 0)-1,prec,trunc_mode)
-        
-        self.reverse_mps() 
-        mpo_block.reverse_mpo() 
-
-    #Canonicalize MPS 
-    #(if Oc=N --> do backward sweep with Oc=0; if Oc=0 --> do backward sweep with Oc=N; else --> do both sweeps)
-    if (orth_centre > 0): self.canonicalize_mps(0, prec, trunc_mode)
-    if (orth_centre < self.N_sites): self.canonicalize_mps(self.N_sites, prec, trunc_mode)
+    #final truncation sweep through mps from one side to the other and back again
+    if (orth_centre > 0): self.canonicalize_mps(0)
+    if (orth_centre < self.N_sites): self.canonicalize_mps(self.N_sites)
+    #if mps has a loose west leg with dim!=1 then grow this leg into new site using a delta function
+    if self.data[0].Wdim != 1: self.insert_site(0,expand_dims(eye(self.data[0].Wdim),1))
 
  def contract_end(self):
     #contracts one leg of ADT/mps as described in paper
-    ns=self.N_sites
-    #first contract local leg of last site and store site as matrix, then delete site from MPS
-    #tens=np.einsum('ijk->j',self.data[ns-1].m)
-    tens=nsum(self.data[ns-1].m,(0,2))
-    del self.data[ns-1]
+    #first sum over south and east legs of end site then dot in to second last site and make
+    #3d again by giving 1d dummy index wth expand_dims
+    self.data[-2].update_site(tens_in=expand_dims(
+            dot(self.data[-2].m,nsum(self.data[-1].m,(0,2)))
+            ,-1) )
+    #delete the useless end site and change N_sites accordingly
+    del self.data[-1]
     self.N_sites=self.N_sites-1
-    #multiply in last site with matrix to give new site, stored as tens
-    #tens=np.einsum('i,jki',tens,self.data[ns-2].m)
-    tens=dot(self.data[ns-2].m,tens)
-    #give tens 1d dummy leg and update last site of MPS
-    tens=expand_dims(tens,-1)            
-    self.data[ns-2].update_site(tens_in=tens)
 
  def readout(self):
      #contracts all but the 'present time' leg of ADT/mps and returns 1-leg reduced density matrix
@@ -345,13 +348,15 @@ class mps_block():
     return out    
 
  def bonddims(self):
+     #returns a list of the bond dimensions along the mps
      bond=[]                
      for ss in range(self.N_sites):
           bond.append(self.data[ss].m.shape[2])
      return bond
           
  def totsize(self):
+     #returns the total number of elements (i.e. complex numbers) which make up the mps
      size=0
      for ss in range(self.N_sites):
          size=self.data[ss].m.shape[0]*self.data[ss].m.shape[1]*self.data[ss].m.shape[2]+size
-     return size     
+     return size

@@ -245,7 +245,7 @@ class temposys(object):
                          
     def prep(self):
         #prepares system to be propagated once params have been set
-        self.mps=mps_block()           #blank mps block
+        self.mps=mps_block(prec=10**(-0.1*self.prec))           #blank mps block
         self.mpo=mpo_block()           #blank mpo block
         
         #set initial instantaneous state and list of states and times that will be calculated
@@ -266,17 +266,15 @@ class temposys(object):
         #get the reduced state at point 1
         self.get_state()
         
-        
-    
     def prop(self,kpoints=1):
         #propagates the system for kpoints steps - system must be prepped first
         for k in range(kpoints):       
             t0=time()
             
-            #contract ADT with TEMPO performing svds and truncating with lambda_c=10**(-self.prec/10)*lambda_max
-            self.mps.contract_with_mpo(self.mpo,prec=10**(-0.1*self.prec))
-            #grow the ADT by one site - this would be the b_0 tensor of Eq.(23), but is just a delta function since we moved I_0 to b_1
-            self.mps.insert_site(0,expand_dims(eye(self.dim**2),1))
+            #contract ADT with TEMPO performing svds and truncating 
+            self.mps.contract_with_mpo(self.mpo)
+            #also grows the ADT by one site - this would be the b_0 tensor of Eq.(23), but is just a delta function since we moved I_0 to b_1
+            
             #move the system forward a point and get the state data
             self.point=self.point+1
             self.get_state()

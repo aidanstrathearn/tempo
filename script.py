@@ -71,94 +71,104 @@ def spin_boson(S,Om,rho,T,Jw):
     system.set_state(rho)
     #attach the bath - using inbuilt numerical integrator to find eta(t), which is 
     #the correlation function in Eq.(14), C(t), integrated twice over time from 0 to t
+    #  "Let the Spin, see the Boson!" - Paddy McGuinness, hopefully
     system.add_bath([Sz,system.num_eta(T,Jw)])     
     return system, Sz, Sx
 
+###########################################################################################
+######### Example 1 - Fig.2 in Makri & Makarov J. Chem. Phys 102, 4600, (1995) 
+###########################################################################################
+######### takes ~90secs to run on HP EliteBook with i7 Core and 16GB RAM
+###########################################################################################
+
+#This example is to highlight the main difference between TEMPO and QUAPI which
+#is the introduction of a new convergence parmater: the singular value cutoff which in turn
+#we control through varying the precision parameter pp
+
+#This reproduces Fig.2 of the Makri paper, dynamics which are seen to be 
+#converged with dkmax=7. We use dkmax=70 here and show that the converged dkmax=7 result
+#is reproduced, as expected, as we increase precision.
+
+
+#First we set up the system for a spin-1/2 and set values taking account of
+#factors of 0.5 between pauli and spin operators
+s=1
+Om=2
+rho=array([[1,0],[0,0]])
+
+#set the kondo parameter a, the cutoff frequency wc,the temperature T=1/beta
+#and define the ohmic spectral density Jw
+a=0.1
+wc=7.5
+T=0.2
+def Jw(w):
+    return 2*a*w*exp(-w/wc)
+
+#now set timestep and kmax
+Del=0.25
+dkmax=70
+
+#set up the spin boson model and get spin operators
+sbm,sz,sx=spin_boson(s,Om,rho,T,Jw)
+
+#propagate for 100 steps using three different values of svd truncation precision
+#and plot operator expectations to check for convergence
+#can see convergence with pp=30 i.e. lambda_c=0.001*lambda_max
+t0=time()
+for pp in [20,30,40]:
+    sbm.convergence_params(Del,dkmax,pp)
+    sbm.prep()
+    sbm.prop(100)
+    datz=sbm.getopdat(2*sz)
+    datx=sbm.getopdat(sx)
+    plt.plot(datz[0],datz[1])
+    plt.plot(datx[0],datx[1])
+print('total time: '+str(time()-t0))
+plt.show()
+
+
 #==============================================================================
 # ###########################################################################################
-# ######### Example 1 - Fig.2 in Makri & Makarov J. Chem. Phys 102, 4600, (1995) with dkmax=70
+# ######### Example 2 - Fig.3(a) in TEMPO paper for lowest 3 couplings
 # ###########################################################################################
-# ######### takes ~90secs to run on HP EliteBook with i7 Core and 16GB RAM
+# ######### takes ~110secs to run on EliteBook with i7 Core and 16GB RAM
 # ###########################################################################################
 # 
-# #First we set up the system for a spin-1/2 and set values taking account of
-# #factors of 0.5 between pauli and spin operators
-# s=1
-# Om=2
-# rho=array([[1,0],[0,0]])
+# #Set up the spin size and initial up state
+# s=2
+# Om=1
+# rho=array([[1,0,0],[0,0,0],[0,0,0]])
 # 
-# #set the kondo parameter a, the cutoff frequency wc,the temperature T=1/beta
-# #and define the ohmic spectral density Jw
-# a=0.1
-# wc=7.5
-# T=0.2
-# def Jw(w):
-#     return 2*a*w*exp(-w/wc)
+# #set cutoff frequency and temperature
+# wc=5
+# T=0
 # 
-# #now set timestep and kmax
-# Del=0.25
-# dkmax=70
+# #now set timestep and kmax - the timestep is larger and the cutoff tau_c smaller than
+# #used in paper so less converged -- better convergence needed for scaling analysis
+# Del=5/20
+# K=10
+# pp=40
 # 
-# #set up the spin boson model and get spin operators
-# sbm,sz,sx=spin_boson(s,Om,rho,T,Jw)
-# 
-# #propagate for 100 steps using three different values of svd truncation precision
-# #and plot operator expectations to check for convergence
-# #can see convergence with pp=30 i.e. lambda_c=0.001*lambda_max
+# #propagate system for 120 steps at lowest three values of coupling and plot Sz data
 # t0=time()
-# for pp in [20,30,40]:
-#     sbm.convergence_params(Del,dkmax,pp)
+# for a in [0.15,0.2,0.25]:
+#     def j1(w):
+#         return 2*a*w*exp(-w/wc)
+#     sbm,sz,sx=spin_boson(s,Om,rho,T,j1)
+#     sbm.convergence_params(Del,K,pp)
 #     sbm.prep()
-#     sbm.prop(100)
-#     datz=sbm.getopdat(2*sz)
-#     datx=sbm.getopdat(sx)
+#     sbm.prop(120)
+#     datz=sbm.getopdat(sz)
 #     plt.plot(datz[0],datz[1])
-#     plt.plot(datx[0],datx[1])
 # print('total time: '+str(time()-t0))
 # plt.show()
 #==============================================================================
-
-
-###########################################################################################
-######### Example 2 - Fig.3(a) in TEMPO paper for lowest 3 couplings
-###########################################################################################
-######### takes ~110secs to run on EliteBook with i7 Core and 16GB RAM
-###########################################################################################
-
-#Set up the spin size and initial up state
-s=2
-Om=1
-rho=array([[1,0,0],[0,0,0],[0,0,0]])
-
-#set cutoff frequency and temperature
-wc=5
-T=0
-
-#now set timestep and kmax - the timestep is larger and the cutoff tau_c smaller than
-#used in paper so less converged -- better convergence needed for scaling analysis
-Del=5/20
-K=10
-pp=40
-
-#propagate system for 120 steps at lowest three values of coupling and plot Sz data
-t0=time()
-for a in [0.15,0.2,0.25]:
-    def j1(w):
-        return 2*a*w*exp(-w/wc)
-    sbm,sz,sx=spin_boson(s,Om,rho,T,j1)
-    sbm.convergence_params(Del,K,pp)
-    sbm.prep()
-    sbm.prop(120)
-    datz=sbm.getopdat(sz)
-    plt.plot(datz[0],datz[1])
-print('total time: '+str(time()-t0))
-plt.show()
 
 #==============================================================================
 # ###########################################################################################
 # ######### Example 3 - Cavity-Dot-Phonons: Damped Rabi Oscillations
 # ###########################################################################################
-# ######### takes ~200secs to run on EliteBook with i7 Core and 16GB RAM
+# ######### takes ~160secs to run on EliteBook with i7 Core and 16GB RAM
 # ###########################################################################################
 # #A more realistic example - a 2-level system coupled to both a single oscillator and a bath
 # #Could model a quantum dot with exciton-phonon interactions placed in a cavity
