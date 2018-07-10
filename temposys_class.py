@@ -12,7 +12,6 @@ from pickle import dump
 from time import time
 from scipy.linalg import expm
 from mpsmpo_class import mps_block, mpo_block
-import multiprocessing as mp
 
 
 class temposys(object):
