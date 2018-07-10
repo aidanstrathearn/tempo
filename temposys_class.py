@@ -11,7 +11,7 @@ from scipy.integrate import quad
 from pickle import dump
 from time import time
 from scipy.linalg import expm
-from mpsmpo_class import mps_block, mpo_block, mpo_site
+from mpsmpo_class import mps_block, mpo_block
 
 
 class temposys(object):
@@ -230,7 +230,7 @@ class temposys(object):
         if dk==0: return iffac.diagonal()
         else: return iffac
     
-    def temposite(self,dk):
+    def tempotens(self,dk):
         #converts rank-2 itab tensor into a 4-leg tempo mpo_site object taking account of degeneracy
         
         #initialise tensor
@@ -258,9 +258,9 @@ class temposys(object):
 
         if dk>=self.dkmax or dk==self.point:
             #if at an end site then sum over external leg and replace with 1d dummy leg
-            return mpo_site(tens_in=expand_dims(dot(tab,ones(tab.shape[3])),-1))
+            return expand_dims(dot(tab,ones(tab.shape[3])),-1)
         else:        
-            return mpo_site(tens_in=tab)
+            return tab
                          
     def prep(self):
         #prepares system to be propagated once params have been set
@@ -282,7 +282,9 @@ class temposys(object):
                                     ,-1),-1))
         
         #append first site to mpo object to give 1-site TEMPO
-        self.mpo.append_mposite(self.temposite(1))
+        #self.mpo.append_mposite(self.temposite(1))
+        
+        self.mpo.insert_site(0,self.tempotens(1))
         
         #system now prepped at point 1
         self.point=1  
@@ -302,9 +304,11 @@ class temposys(object):
           
             if self.point<self.dkmax+1:
                 #while  in the growth stage we need to update the 'K'th site to give it an extra leg
-                self.mpo.data[-1]=self.temposite(self.point-1)
+                #self.mpo.sites[-1]=self.temposite(self.point-1)
+                self.mpo.sites[-1].update(self.tempotens(self.point-1))
                 #and then append the new end site
-                self.mpo.append_mposite(self.temposite(self.point))
+                #self.mpo.append_mposite(self.temposite(self.point))
+                self.mpo.insert_site(self.point-1,self.tempotens(self.point))
             else:
                 #after the growth stage the TEMPO remains the same at each step of propagation
                 #but we now need to contract one leg of the ADT as described in paper

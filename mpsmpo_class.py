@@ -36,15 +36,15 @@ import scipy as sp
 ########################################################################### 
 class mpo_site(object):
 
- def __init__(self, tens_in = None):
+ def __init__(self, tens = None):
 
     try:
-       if len(tens_in.shape) != 4: raise err.MpoSiteShapeError
+       if len(tens.shape) != 4: raise err.MpoSiteShapeError
 
-       #get dims from tens_in & set mpo_site to tens_in 
-       self.Sdim = tens_in.shape[0]; self.Ndim = tens_in.shape[1]
-       self.Wdim = tens_in.shape[2]; self.Edim = tens_in.shape[3]
-       self.m = tens_in
+       #get dims from tens & set mpo_site to tens 
+       self.Sdim = tens.shape[0]; self.Ndim = tens.shape[1]
+       self.Wdim = tens.shape[2]; self.Edim = tens.shape[3]
+       self.m = tens
 
     except err.MpoSiteShapeError as e: 
        print("mpo_site: ", e.msg)
@@ -54,22 +54,22 @@ class mpo_site(object):
        print("mpo_site: ", e.msg)
        sys.exit()
 
- def update_site(self, tens_in = None):
+ def update(self, tens = None):
 
     try:
-       if len(tens_in.shape) != 4: raise err.MpoSiteShapeError
+       if len(tens.shape) != 4: raise err.MpoSiteShapeError
 
-       #get dims from tens_in & set mpo_site to tens_in 
-       self.Sdim = tens_in.shape[0]; self.Ndim = tens_in.shape[1]
-       self.Wdim = tens_in.shape[2]; self.Edim = tens_in.shape[3]
-       self.m = tens_in
+       #get dims from tens & set mpo_site to tens 
+       self.Sdim = tens.shape[0]; self.Ndim = tens.shape[1]
+       self.Wdim = tens.shape[2]; self.Edim = tens.shape[3]
+       self.m = tens
 
     except err.MpoSiteShapeError as e: 
-       print("mpo: update_site: ", e.msg)
+       print("mpo: update: ", e.msg)
        sys.exit()
 
     except err.MpoSiteInputError as e:
-       print("mpo: update_site: ", e.msg)
+       print("mpo: update: ", e.msg)
        sys.exit()
 
 ##########################################################################
@@ -85,14 +85,14 @@ class mpo_site(object):
 ###########################################################################
 class mps_site(object):
 
- def __init__(self,tens_in = None):
+ def __init__(self,tens = None):
 
     try:
-       if len(tens_in.shape) != 3: raise err.MpsSiteShapeError
+       if len(tens.shape) != 3: raise err.MpsSiteShapeError
 
-       #get dims from tens_in & set mps_site to tens_in 
-       self.SNdim = tens_in.shape[0]; self.Wdim = tens_in.shape[1]; self.Edim = tens_in.shape[2]
-       self.m = tens_in
+       #get dims from tens & set mps_site to tens 
+       self.SNdim = tens.shape[0]; self.Wdim = tens.shape[1]; self.Edim = tens.shape[2]
+       self.m = tens
 
     except err.MpsSiteShapeError as e: 
        print("mps_site: ", e.msg)
@@ -102,21 +102,21 @@ class mps_site(object):
        print("mps_site: ", e.msg)
        sys.exit()
 
- def update_site(self, tens_in = None):
+ def update(self, tens = None):
 
     try:
-       if len(tens_in.shape) != 3: raise err.MpsSiteShapeError
+       if len(tens.shape) != 3: raise err.MpsSiteShapeError
 
-       #get dims from tens_in & set mps_site to tens_in 
-       self.SNdim = tens_in.shape[0]; self.Wdim = tens_in.shape[1]; self.Edim = tens_in.shape[2]
-       self.m = tens_in
+       #get dims from tens & set mps_site to tens 
+       self.SNdim = tens.shape[0]; self.Wdim = tens.shape[1]; self.Edim = tens.shape[2]
+       self.m = tens
 
     except err.MpsSiteShapeError as e: 
-       print("mps: update_site: ", e.msg)
+       print("mps: update: ", e.msg)
        sys.exit()
 
     except err.MpsSiteInputError as e:
-       print("mps: update_site: ", e.msg)
+       print("mps: update: ", e.msg)
        sys.exit()
 
  def contract_with_mpo_site(self,mposite):
@@ -129,14 +129,17 @@ class mps_site(object):
      #     MPO site        W2 --O-- E2
      #                          \
      #
-     #first swap axes of MPS/MPO sites to be in the right order to contract using numpy dot
-     tensO=dot(swapaxes(mposite.m,1,3),swapaxes(self.m,0,1))
-     #get the dimensions of resulting 5-leg tensor
-     sh=tensO.shape
-     #swap axis to put west legs together and east legs together then reshape into
-     #new 3-leg MPS and update
-     tensO=reshape(swapaxes(swapaxes(tensO,1,2),2,3),(sh[0],sh[2]*sh[3],sh[1]*sh[4]))
-     self.update_site(tens_in=tensO)
+     #first reshape each tensor into a matrix and contract legs using dot: the '-1's in reshape tell it to work out the
+     #size of one leg of the matrix given the size of the other and of the original tensor
+     tensO=dot(reshape(swapaxes(mposite.m,1,3),(-1,mposite.Ndim)),reshape(self.m,(self.SNdim,-1)))
+     #reshape into 4-leg tensor: south leg, 2 east legs, and a single combine west leg
+     #east legs need to be beside each other to combine so swap first east with combined west
+     tensO=swapaxes(reshape(tensO,(-1, mposite.Edim, mposite.Wdim*self.Wdim, self.Edim)),1,2)
+     #finally reshape into 3-leg tensor to combine the easts
+     tensO=reshape(tensO,(-1, mposite.Wdim*self.Wdim, mposite.Edim*self.Edim))
+
+     #update the mps site object 
+     self.update(tens=tensO)
 
 ######################################################################################################
 #########################################  BLOCK CLASSES  #########################################
@@ -148,25 +151,31 @@ class mpo_block(object):
  def __init__(self):
     #keep track of how long the block is 
     self.N_sites = 0
-    self.data = []
-         
+    self.sites = []
+ 
+ def insert_site(self, axis, tensor_to_append):
+
+    try:
+       if len(tensor_to_append.shape) != 4: raise err.MpoSiteInputError
+       #Append a new site
+       self.sites.insert(axis,mpo_site(tens = tensor_to_append))
+       self.N_sites = self.N_sites + 1 
+
+    except err.MpoSiteInputError as e:
+       print("append_site: ", e.msg)
+       sys.exit()
+        
  def append_mposite(self,mposite):
     #Append a new site
-    self.data.append(mposite)
+    self.sites.append(mposite)
     self.N_sites = self.N_sites + 1
 
  def reverse_mpo(self):
 
-    self.data.reverse()
-    for site in range(self.N_sites):
-        MpoSiteT=swapaxes(self.data[site].m,2,3)
-        self.data[site].update_site(tens_in = MpoSiteT)
- 
- def insert_site(self, axis,mposite):
-     self.data.insert(axis,mposite)
-     self.N_sites = self.N_sites + 1 
+    self.sites.reverse()
+    for site in self.sites:
+        site.update(tens=swapaxes(site.m,2,3))
 
-       
 class mps_block():
 
  def __init__(self,prec):
@@ -176,7 +185,7 @@ class mps_block():
     self.N_sites = 0
 
     #initialize list of mps_sites
-    self.data = []
+    self.sites = []
      
     self.precision=prec
     
@@ -185,7 +194,7 @@ class mps_block():
     try:
        if len(tensor_to_append.shape) != 3: raise err.MpsSiteInputError
        #Append a new site
-       self.data.insert(axis,mps_site(tens_in = tensor_to_append))
+       self.sites.insert(axis,mps_site(tens = tensor_to_append))
        self.N_sites = self.N_sites + 1 
 
     except err.MpsSiteInputError as e:
@@ -216,7 +225,7 @@ class mps_block():
     #             \
     #           SNdim                                  'theta'
     #
-    theta = reshape(self.data[k-1].m,(-1,self.data[k-1].Edim))
+    theta = reshape(self.sites[k-1].m,(-1,self.sites[k-1].Edim))
     
     #SVD:
     #
@@ -255,12 +264,12 @@ class mps_block():
     theta=dot(U.conj().T,theta)
     #now retain  (Wdim x SNdim) --U-- chi to become the new (k-1)'th site after reshaping to 
     #separate out west and south legs
-    self.data[k-1].update_site(tens_in = reshape(U,(-1,self.data[k-1].Wdim, chi)))
+    self.sites[k-1].update(tens = reshape(U,(-1,self.sites[k-1].Wdim, chi)))
     
     #multiply chi --Udag.M-- Edim into the k'th site, practically carried out by converting to a matrix and
     #then using numpy dot
-    smat=dot(theta,reshape(swapaxes(self.data[k].m,0,1), (self.data[k].Wdim,-1)))
-    self.data[k].update_site(tens_in = swapaxes(reshape(smat, (chi,self.data[k].SNdim,-1)),0,1))
+    smat=dot(theta,reshape(swapaxes(self.sites[k].m,0,1), (self.sites[k].Wdim,-1)))
+    self.sites[k].update(tens = swapaxes(reshape(smat, (chi,self.sites[k].SNdim,-1)),0,1))
     #Overall then we are left with:
     #                     
     #          ---U---  chi  ---Udag.M---O---    
@@ -273,10 +282,10 @@ class mps_block():
  def reverse_mps(self):
     #reverse the entire mps bock 
     #first reverse the list of sites
-    self.data.reverse()  
+    self.sites.reverse()  
     #then site by site reverse the swap the east and west legs of the sites
-    for mpssite in self.data:
-        mpssite.update_site(tens_in = swapaxes(mpssite.m, 1,2))
+    for site in self.sites:
+        site.update(tens = swapaxes(site.m, 1,2))
     
  def canonicalize_mps(self, orth_centre): 
     #systematically truncate all bonds of mps
@@ -293,21 +302,21 @@ class mps_block():
     #default val of orth_centre is the actual centre of the mps
     if orth_centre == None: orth_centre=int(ceil(0.5*self.N_sites))
     #contract first sites of MPS/MPO together
-    self.data[0].contract_with_mpo_site(mpo_block.data[0])
+    self.sites[0].contract_with_mpo_site(mpo_block.sites[0])
     #iteratively contract in mpo sites and immediately truncate the 
     #bond connecting to the previous mps site up until the orth_centre
     for site in range(1,orth_centre):
-        self.data[site].contract_with_mpo_site(mpo_block.data[site])
+        self.sites[site].contract_with_mpo_site(mpo_block.sites[site])
         self.truncate_bond(site)
     
     #now reverse the mps and mpo and repeat as above up until all mpo sites have been contracted in
     self.reverse_mps() 
     mpo_block.reverse_mpo()
     #if statement for special case of a 1 site mps
-    if self.N_sites>1: self.data[0].contract_with_mpo_site(mpo_block.data[0])
+    if self.N_sites>1: self.sites[0].contract_with_mpo_site(mpo_block.sites[0])
     
     for site in range(1,self.N_sites - orth_centre - int(orth_centre == 0)):
-        self.data[site].contract_with_mpo_site(mpo_block.data[site])
+        self.sites[site].contract_with_mpo_site(mpo_block.sites[site])
         self.truncate_bond(site)
     #truncate last bond that links the two halfs of the mps we have seperately swept through above  
     self.truncate_bond(self.N_sites - orth_centre - int(orth_centre == 0))
@@ -319,61 +328,43 @@ class mps_block():
     if (orth_centre > 0): self.canonicalize_mps(0)
     if (orth_centre < self.N_sites): self.canonicalize_mps(self.N_sites)
     #if mps has a loose west leg with dim!=1 then grow this leg into new site using a delta function
-    if self.data[0].Wdim != 1: self.insert_site(0,expand_dims(eye(self.data[0].Wdim),1))
+    if self.sites[0].Wdim != 1: self.insert_site(0,expand_dims(eye(self.sites[0].Wdim),1))
 
  def contract_end(self):
     #contracts one leg of ADT/mps as described in paper
     #first sum over south and east legs of end site then dot in to second last site and make
     #3d again by giving 1d dummy index wth expand_dims
-    self.data[-2].update_site(tens_in=expand_dims(
-            dot(self.data[-2].m,nsum(self.data[-1].m,(0,2)))
+    self.sites[-2].update(tens=expand_dims(
+            dot(self.sites[-2].m,nsum(self.sites[-1].m,(0,2)))
             ,-1) )
     #delete the useless end site and change N_sites accordingly
-    del self.data[-1]
+    del self.sites[-1]
     self.N_sites=self.N_sites-1
-
- def readout2(self):
-     #contracts all but the 'present time' leg of ADT/mps and returns 1-leg reduced density matrix
-    l=len(self.data)
-    #for special case of rank-1 ADT just sum over 1d dummy legs and return
-    if l==1:
-        out=nsum(nsum(self.data[0].m,-1),-1)
-        return out
-    #other wise sum over all but 1-leg of last site, store as out, then successively
-    #sum legs of new end sites to make matrices then multiply into vector 'out'
-    out=nsum(nsum(self.data[l-1].m,0),-1)
-    for jj in range(l-2):
-        out=dot(nsum(self.data[l-2-jj].m,0),out)
-    out=dot(nsum(self.data[0].m,1),out)
-    #after the last site, 'out' should now be the reduced density matrix
-    return out 
  
  def readout(self):
      #contracts all but the 'present time' leg of ADT/mps and returns 1-leg reduced density matrix
-    l=len(self.data)
+    #l=len(self.sites)
     #for special case of rank-1 ADT just sum over 1d dummy legs and return
-    if self.N_sites==1:
-        out=nsum(nsum(self.data[0].m,-1),-1)
-        return out
+    if self.N_sites==1: return nsum(nsum(self.sites[0].m,-1),-1)
     #other wise sum over all but 1-leg of last site, store as out, then successively
     #sum legs of new end sites to make matrices then multiply into vector 'out'
-    out=nsum(nsum(self.data[l-1].m,0),-1)
-    for jj in range(l-2):
-        out=dot(nsum(self.data[l-2-jj].m,0),out)
-    out=dot(nsum(self.data[0].m,1),out)
+    out=nsum(nsum(self.sites[self.N_sites-1].m,0),-1)
+    for jj in range(self.N_sites-2):
+        out=dot(nsum(self.sites[self.N_sites-2-jj].m,0),out)
+    out=dot(nsum(self.sites[0].m,1),out)
     #after the last site, 'out' should now be the reduced density matrix
     return out
 
  def bonddims(self):
      #returns a list of the bond dimensions along the mps
      bond=[]                
-     for ss in range(self.N_sites):
-          bond.append(self.data[ss].m.shape[2])
+     for site in self.sites: bond.append(site.Edim)
      return bond
           
  def totsize(self):
      #returns the total number of elements (i.e. complex numbers) which make up the mps
      size=0
-     for ss in range(self.N_sites):
-         size=self.data[ss].m.shape[0]*self.data[ss].m.shape[1]*self.data[ss].m.shape[2]+size
+     for site in self.sites: size=size + site.SNdim*site.Wdim*site.Edim
      return size
+
+
