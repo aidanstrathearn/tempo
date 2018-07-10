@@ -89,9 +89,8 @@ def spin_boson(S,Om,rho,T,Jw):
 #we control through varying the precision parameter pp
 
 #This reproduces Fig.2 of the Makri paper, dynamics which are seen to be 
-#converged with dkmax=7. We use no memory cutoff here but vary precision to show how convergence
-#is acheived by increasing precision
-
+#converged with dkmax=7. We use no memory cutoff (dkmax=100) but vary precision to 
+#show how convergence is acheived by increasing precision
 
 #First we set up the system for a spin-1/2 and set values taking account of
 #factors of 0.5 between pauli and spin operators
@@ -172,14 +171,14 @@ plt.show()
 # ###########################################################################################
 # ######### Example 3 - Cavity-Dot-Phonons: Damped Rabi Oscillations
 # ###########################################################################################
-# ######### takes ~160secs to run on EliteBook with i7 Core and 16GB RAM
+# ######### takes ~120secs to run on EliteBook with i7 Core and 16GB RAM
 # ###########################################################################################
 # #A more realistic example - a 2-level system coupled to both a single oscillator and a bath
 # #Could model a quantum dot with exciton-phonon interactions placed in a cavity
 # #We use TEMPO to model the phonon bath but treat the cavity mode as part of the reduced system
 # 
 # #This example is to demonstrate how TEMPO can easily deal with a relatively large reduced 
-# #system (8 states) using a large memory cutoff (K=25) - impossible using standard QUAPI!!
+# #system (8 states) without needing a memory cutoff (points=100, K=100) - impossible using standard QUAPI!!
 # 
 # #set maximum number of cavity excitations
 # Ncav=3
@@ -238,8 +237,8 @@ plt.show()
 # 
 # #now set convergence parameters
 # Del=0.125
-# K=25 
-# pp=60
+# K=100
+# pp=50
 # cdp.convergence_params(Del,K,pp)
 # 
 # #prepare and propagate system for 100 steps
