@@ -305,9 +305,9 @@ class mps_block():
     self.sites[0].contract_with_mpo_site(mpo_block.sites[0])
     #iteratively contract in mpo sites and immediately truncate the 
     #bond connecting to the previous mps site up until the orth_centre
-    for site in range(1,orth_centre):
-        self.sites[site].contract_with_mpo_site(mpo_block.sites[site])
-        self.truncate_bond(site)
+    for jj in range(1,orth_centre):
+        self.sites[jj].contract_with_mpo_site(mpo_block.sites[jj])
+        self.truncate_bond(jj)
     
     #now reverse the mps and mpo and repeat as above up until all mpo sites have been contracted in
     self.reverse_mps() 
@@ -315,9 +315,9 @@ class mps_block():
     #if statement for special case of a 1 site mps
     if self.N_sites>1: self.sites[0].contract_with_mpo_site(mpo_block.sites[0])
     
-    for site in range(1,self.N_sites - orth_centre - int(orth_centre == 0)):
-        self.sites[site].contract_with_mpo_site(mpo_block.sites[site])
-        self.truncate_bond(site)
+    for jj in range(1,self.N_sites - orth_centre - int(orth_centre == 0)):
+        self.sites[jj].contract_with_mpo_site(mpo_block.sites[jj])
+        self.truncate_bond(jj)
     #truncate last bond that links the two halfs of the mps we have seperately swept through above  
     self.truncate_bond(self.N_sites - orth_centre - int(orth_centre == 0))
     #reverse mps and mpo back to original order
