@@ -1,7 +1,7 @@
 from __future__ import print_function
 import sys
 import ErrorHandling as err
-from numpy import dot, swapaxes, ceil, expand_dims, reshape, eye, linalg
+from numpy import dot, swapaxes, ceil, expand_dims, reshape, eye, linalg, array
 from numpy import sum as nsum
 import scipy as sp
 
@@ -26,10 +26,8 @@ class mpo_site(object):
 
     try:
        if len(tens.shape) != 4: raise err.MpoSiteShapeError
-
        #get dims from tens & set mpo_site to tens 
-       self.Sdim = tens.shape[0]; self.Ndim = tens.shape[1]
-       self.Wdim = tens.shape[2]; self.Edim = tens.shape[3]
+       [self.Sdim,self.Ndim,self.Wdim,self.Edim]=tens.shape
        self.m = tens
 
     except err.MpoSiteShapeError as e: 
@@ -40,17 +38,13 @@ class mpo_site(object):
 
     try:
        if len(tens.shape) != 4: raise err.MpoSiteShapeError
-
        #get dims from tens & set mpo_site to tens 
-       self.Sdim = tens.shape[0]; self.Ndim = tens.shape[1]
-       self.Wdim = tens.shape[2]; self.Edim = tens.shape[3]
+       [self.Sdim,self.Ndim,self.Wdim,self.Edim]=tens.shape
        self.m = tens
 
     except err.MpoSiteShapeError as e: 
        print("mpo: update: ", e.msg)
        sys.exit()
-
-
 
 class mps_site(object):
 
@@ -58,9 +52,8 @@ class mps_site(object):
 
     try:
        if len(tens.shape) != 3: raise err.MpsSiteShapeError
-
        #get dims from tens & set mps_site to tens 
-       self.SNdim = tens.shape[0]; self.Wdim = tens.shape[1]; self.Edim = tens.shape[2]
+       [self.SNdim,self.Wdim,self.Edim]=tens.shape
        self.m = tens
 
     except err.MpsSiteShapeError as e: 
@@ -71,9 +64,8 @@ class mps_site(object):
 
     try:
        if len(tens.shape) != 3: raise err.MpsSiteShapeError
-
        #get dims from tens & set mps_site to tens 
-       self.SNdim = tens.shape[0]; self.Wdim = tens.shape[1]; self.Edim = tens.shape[2]
+       [self.SNdim,self.Wdim,self.Edim]=tens.shape
        self.m = tens
 
     except err.MpsSiteShapeError as e: 
@@ -306,5 +298,3 @@ class mps_block(object):
      size=0
      for site in self.sites: size=size + site.SNdim*site.Wdim*site.Edim
      return size
-
-
