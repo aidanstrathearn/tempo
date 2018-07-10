@@ -1,7 +1,7 @@
 from __future__ import print_function
 import sys
 import ErrorHandling as err
-from numpy import dot, swapaxes, ceil, expand_dims, reshape, eye, linalg, array
+from numpy import dot, swapaxes, ceil, expand_dims, reshape, eye, linalg
 from numpy import sum as nsum
 import scipy as sp
 
@@ -13,8 +13,6 @@ import scipy as sp
 # That is, our ADT/MPS legs point downwards here and the 'present' timepoint leg is 
 # to the left -- python list element 0 in list language
 #==============================================================================
-
-
 
 ######################################################################################################
 ##########################################  SITE CLASSES  ###########################################

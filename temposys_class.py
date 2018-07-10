@@ -12,6 +12,7 @@ from pickle import dump
 from time import time
 from scipy.linalg import expm
 from mpsmpo_class import mps_block, mpo_block
+import multiprocessing as mp
 
 
 class temposys(object):
@@ -140,36 +141,15 @@ class temposys(object):
     def num_eta(self,T,Jw):
         #function that gives a lineshape eta(t) for a given bath at temperature T,
         #initially in thermal equilibrium  whith correlation function given by Eq.(14)
-        
-        #NOTE: this takes varying amounts of time to use, of course depending on spectral density
-        #and can throw errors when using large memory cutoff times simply because its trying 
-        #integrate the correlation function which is has died to zero
-        def fo(w,T,t):
-            #fo is the time dependent part of theintegrand of Eq.(14) analytically twice 
-            #integrated over time from 0 to t
-            #for T=0 we analytically take the linit coth -> 1 and use special case
-            if T==0: return w**(-2)*((1-cos(w*t))+1j*(sin(w*t)-w*t))
-            else: return w**(-2)*(coth(w/(2*T))*(1-cos(w*t))+1j*(sin(w*t)-w*t))
-            return fo
-               
-        def numint(t,T,nin): 
-            #this function numerically integrates J(w)fo(w,T,t)dw from 0 to infinity
-            #returning eta(t) for temperature T
-            
-            #eta(0) should always be 0
-            if t == 0:
-                eta = 0
-            else:
-                #integrate real and imaginary parts separately
-                numir = quad(lambda w: nin(w)*(fo(w,T,t).real),0,inf)
-                numii = quad(lambda w: nin(w)*(fo(w,T,t).imag),0,inf)
-                eta = numir[0]+1j*numii[0]
-            return eta
-        
-        def eta_func(t):
-            return numint(t,T,Jw)
-        
-        return eta_func  
+        def int1(t): return quad(lambda w: w**(-2)*Jw(w)*(1-cos(w*t)),0,inf)[0]
+        def int2(t): return quad(lambda w: w**(-2)*Jw(w)*(1-cos(w*t))*coth(w/(2*T)),0,inf)[0]
+        def int3(t): return quad(lambda w: w**(-2)*Jw(w)*(sin(w*t)-w*t),0,inf)[0]
+        if T==0: 
+            def eta(t): return int1(t)+1j*int3(t)
+        else:
+            def eta(t): return int2(t)+1j*int3(t)
+
+        return eta  
 
     def getcoeffs(self,eta_function):
         #calculates makri coeffs by taking second order finite differences of an eta(t) function
@@ -184,6 +164,7 @@ class temposys(object):
         #
         #tb is discretized eta(t) in form of a list tb=[eta(dt),eta(2 dt),eta(3 dt), ...]
         tb=list(map(eta_function,array(range(self.dkmax+2))*self.dt))
+        #tb=list(map(eta_function,array(range(self.dkmax+2))*self.dt))
         #initial list of eta_dk's: first coeff is just eta_0=eta(dt), this is Eq.(13) bottom
         etab=[tb[1]]
         #now take finite differences on tb to get coeffs
@@ -281,9 +262,7 @@ class temposys(object):
                 dot(self.state,self.freeprop)*self.itab(0)
                                     ,-1),-1))
         
-        #append first site to mpo object to give 1-site TEMPO
-        #self.mpo.append_mposite(self.temposite(1))
-        
+        #append insert site to mpo object to give 1-site TEMPO
         self.mpo.insert_site(0,self.tempotens(1))
         
         #system now prepped at point 1
@@ -304,10 +283,8 @@ class temposys(object):
           
             if self.point<self.dkmax+1:
                 #while  in the growth stage we need to update the 'K'th site to give it an extra leg
-                #self.mpo.sites[-1]=self.temposite(self.point-1)
                 self.mpo.sites[-1].update(self.tempotens(self.point-1))
                 #and then append the new end site
-                #self.mpo.append_mposite(self.temposite(self.point))
                 self.mpo.insert_site(self.point-1,self.tempotens(self.point))
             else:
                 #after the growth stage the TEMPO remains the same at each step of propagation
