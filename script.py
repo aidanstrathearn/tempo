@@ -81,7 +81,7 @@ def spin_boson(S,Om,rho,T,Jw):
 ###########################################################################################
 ######### Example 1 - Fig.2 in Makri & Makarov J. Chem. Phys 102, 4600, (1995) 
 ###########################################################################################
-######### takes ~90secs to run on HP EliteBook with i7 Core and 16GB RAM
+######### takes ~25secs to run on HP EliteBook with i7 Core and 16GB RAM
 ###########################################################################################
 
 #This example is to highlight the main difference between TEMPO and QUAPI which
@@ -89,8 +89,8 @@ def spin_boson(S,Om,rho,T,Jw):
 #we control through varying the precision parameter pp
 
 #This reproduces Fig.2 of the Makri paper, dynamics which are seen to be 
-#converged with dkmax=7. We use dkmax=70 here and show that the converged dkmax=7 result
-#is reproduced, as expected, as we increase precision.
+#converged with dkmax=7. We use no memory cutoff here but vary precision to show how convergence
+#is acheived by increasing precision
 
 
 #First we set up the system for a spin-1/2 and set values taking account of
@@ -160,8 +160,9 @@ plt.show()
 #     sbm,sz,sx=spin_boson(s,Om,rho,T,j1)
 #     sbm.convergence_params(Del,K,pp)
 #     sbm.prep()
-#     sbm.prop(120)
+#     sbm.prop(50)
 #     datz=sbm.getopdat(sz)
+#     print(datz[1][10])
 #     plt.plot(datz[0],datz[1])
 # print('total time: '+str(time()-t0))
 # plt.show()

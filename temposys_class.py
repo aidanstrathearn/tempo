@@ -12,7 +12,6 @@ from pickle import dump
 from time import time
 from scipy.linalg import expm
 from mpsmpo_class import mps_block, mpo_block
-#import pathos.multiprocessing as mp
 from pathos.multiprocessing import ProcessingPool as Pool
 
 
@@ -123,6 +122,7 @@ class temposys(object):
         #sets the convergence parameters
         self.dkmax=dkmax_int
         self.prec=truncprec_int
+        print('dt: '+str(self.dt))
         #self.dt=dt_float
         #calculates Makri coefficients if baths have already been added
         if len(self.intparam)>1 and self.dt != dt_float:
@@ -145,10 +145,10 @@ class temposys(object):
         #function that gives a lineshape eta(t) for a given bath at temperature T,
         #initially in thermal equilibrium  whith correlation function given by Eq.(14)
 
-        def int1(t): return quad(lambda w: w**(-2)*Jw(w)*(1-cos(w*t)),0,inf,limit=subdiv)[0]
-        
+        def int1(t): return quad(lambda w: w**(-2)*Jw(w)*(1-cos(w*t)),0,inf,limit=subdiv)[0]      
         def int2(t): return quad(lambda w: w**(-2)*Jw(w)*(1-cos(w*t))*coth(w/(2*T)),0,inf,limit=subdiv)[0]
         def int3(t): return quad(lambda w: w**(-2)*Jw(w)*(sin(w*t)-w*t),0,inf,limit=subdiv)[0]
+        
         if T==0: 
             def eta(t): return int1(t)+1j*int3(t)
         else:
@@ -168,21 +168,33 @@ class temposys(object):
         #eta_dk=( eta(dt (dk+1))-eta(dt dk) ) - ( eta(dt dk)-eta(dt (dk-1)) )
         #and Eq.(13) bottom:
         #eta_0=eta(dt)
-        #
+
         #tb is discretized eta(t) in form of a list tb=[eta(dt),eta(2 dt),eta(3 dt), ...]
-        tb=list(Pool().map(eta_function,array(range(self.dkmax+2))*self.dt))
         #tb=list(map(eta_function,array(range(self.dkmax+2))*self.dt))
+        with Pool() as pool:
+            try: 
+                pool.restart()
+            except(AssertionError): 
+                pass
+            ite=pool.imap(eta_function,array(range(self.dkmax+2))*self.dt)
+            pool.close()
+            pool.join()
+            
+        tb=list(ite)
+        
         #initial list of eta_dk's: first coeff is just eta_0=eta(dt), this is Eq.(13) bottom
         etab=[tb[1]]
         #now take finite differences on tb to get coeffs
         for jj in range(1,self.dkmax+1): etab.append(tb[jj+1]-2*tb[jj]+tb[jj-1])
         print('integration time: '+str(round(-ctime+time(),2)))
+        #print(etab)
         return etab
                
     def add_bath(self,b_list):
         #attaches a bath to the system
         #b_list should have form [hilbert space operator coupled to bath,eta(t) of bath]    
         self.intparam=[[self.comm(b_list[0]).diagonal(),self.acomm(b_list[0]).diagonal()],b_list[1],[]]
+        #print(b_list[1](1))
         #if the timestep has been set already then calculate Makri coeffs, else leave blank
         #if statement is to make 'add_bath', 'set_hamiltonian' and 'convergence_params' commute
         if self.dt>0: 
