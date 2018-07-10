@@ -1,9 +1,9 @@
 from __future__ import print_function
 import sys
 import ErrorHandling as err
-from svd_functions import tensor_to_matrix, matrix_to_tensor, set_trunc_params, compute_lapack_svd
-from numpy import dot, swapaxes, transpose, ceil, expand_dims, reshape, eye
+from numpy import dot, swapaxes, ceil, expand_dims, reshape, eye, linalg, diag
 from numpy import sum as nsum
+import scipy as sp
 
 #==============================================================================
 # Note we refer to tensors here as having North/South/East/West legs -- graphically these labels
@@ -159,14 +159,18 @@ class mpo_block(object):
 
     self.data.reverse()
     for site in range(self.N_sites):
-        MpoSiteT=transpose(self.data[site].m, (0,1,3,2))
+        MpoSiteT=swapaxes(self.data[site].m,2,3)
         self.data[site].update_site(tens_in = MpoSiteT)
+ 
+ def insert_site(self, axis,mposite):
+     self.data.insert(axis,mposite)
+     self.N_sites = self.N_sites + 1 
 
+       
 class mps_block():
 
- def __init__(self,prec,trunc='accuracy'):
-    #initialise an mps by stating what precision and what truncation method
-    #are going to be used to store it
+ def __init__(self,prec):
+    #initialise an mps by stating what precision we are going to keep its bonds truncated to
     
     #set the length of mps_block
     self.N_sites = 0
@@ -175,8 +179,6 @@ class mps_block():
     self.data = []
      
     self.precision=prec
-    
-    self.trunc_mode=trunc
     
  def insert_site(self, axis, tensor_to_append):
 
@@ -195,9 +197,10 @@ class mps_block():
        sys.exit()
  
  def truncate_bond(self,k):
+    #If there are N sites then there are only N-1 bonds so...
+    if k<1 or k>self.N_sites-1: return 0
     
-    #truncates the k'th bond of the MPS using an SVD using method self.trunc_mode and precision self.precision
-    #
+    #truncates the k'th bond of the MPS using an SVD 
     #                     
     #          ---O---  Edim  ---O---                   
     #             \              \   
@@ -205,35 +208,31 @@ class mps_block():
     #  (k-1)'th site     ^       k'th site
     #                    ^
     #                k'th bond
-    #
-    #If there are N sites then there are only N-1 bonds so...
-    if k<1 or k>self.N_sites-1:
-        return 0
+    
     #start by combining south and west legs of (k-1)'th site to give 2-leg tensor which is 
     #the rectangular matrix we will perform the SVD on
-    #
-    #
     #
     #     Wdim  --O--  Edim  ----->      (Wdim x SNdim) --M-- Edim
     #             \
     #           SNdim                                  'theta'
     #
-    dims = [self.data[k-1].SNdim * self.data[k-1].Wdim, self.data[k-1].Edim]
-    theta = tensor_to_matrix(self.data[k-1].m, dims)
-
-    #Set trunc params
-    chi, eps = set_trunc_params(self.precision, self.trunc_mode, min(dims[0],dims[1]))
-
-    #Now perfom the SVD and truncate - both of these happen inside 'compute_lapack_svd'
+    theta = reshape(self.data[k-1].m,(-1,self.data[k-1].Edim))
     
     #SVD:
     #
     #  dim1 --M-- dim2  ---->  dim1 --U-- min(dim1,dim2) --S-- min(dim1,dim2) --V-- dim2
     #
-    #  U, V unitary are matrices (U.Udag=I, V.Vdag=I)
-    #  S is diagonal matrix of the min(dim1,dim2) singular values
+    #  U, V unitary are matrices (U.Udag=I, V.Vdag=I), S is diagonal matrix of min(dim1,dim2) singular values
     
-    #The truncation is actually on the unitary U rather than the singular values S
+    #this try and except is because sometimes 'gesvd' fails
+    #Could also use Arnoldi SVD here but we found the truncation error was worse
+    try:
+        U, Sigma, VH = sp.linalg.svd(theta, full_matrices=True,lapack_driver='gesvd')
+    except(linalg.LinAlgError):
+        U, Sigma, VH = sp.linalg.svd(theta, full_matrices=True,lapack_driver='gesdd')
+    #Sigma here is list of singular values in non-increasing order rather than a diagonal matrix
+        
+    #TRUNCATION: this is actually on the unitary U rather than the singular values S
     #We throw away columns of U that get multiplied into entries of the diagonal matrix S which 
     #are smaller than a specified value to leave chi columns. 
     #Then we can approximate the dim1-dimensional identity matrix
@@ -244,19 +243,24 @@ class mps_block():
     #
     #     (Wdim x SNdim) --M-- Edim    ------>   (Wdim x SNdim) --U-- chi --Udag.M-- Edim
     #
-    U, Udag, chi = compute_lapack_svd(theta, chi, eps)
-
+    #loop through finding the position of the first singular value that falls below precision
+    #since python ordering starts from 0 the position is the number of SV's we want to keep = chi
+    try:
+        chi=next(i for i in range(len(Sigma)) if Sigma[i]/max(Sigma) < self.precision)
+    #If no singular values are small enough then keep em all
+    except(StopIteration):
+        chi=len(Sigma)
+    #Chop off the rows of U which dont get multiplied into the chi values we are keeping
+    U=U[:, 0:chi]
+    theta=dot(U.conj().T,theta)
     #now retain  (Wdim x SNdim) --U-- chi to become the new (k-1)'th site after reshaping to 
     #separate out west and south legs
-    self.data[k-1].update_site(tens_in = matrix_to_tensor(U, [self.data[k-1].SNdim, self.data[k-1].Wdim, chi]))
+    self.data[k-1].update_site(tens_in = reshape(U,(-1,self.data[k-1].Wdim, chi)))
     
     #multiply chi --Udag.M-- Edim into the k'th site, practically carried out by converting to a matrix and
     #then using numpy dot
-    
-    tmpMps=tensor_to_matrix(self.data[k].m, (self.data[k].Wdim, self.data[k].SNdim * self.data[k].Edim))
-    tmpMps = dot(Udag,dot(theta,tmpMps))
-    tmpMps=matrix_to_tensor(tmpMps, (self.data[k].SNdim,chi,self.data[k].Edim))
-    self.data[k].update_site(tens_in = tmpMps)
+    smat=dot(theta,reshape(swapaxes(self.data[k].m,0,1), (self.data[k].Wdim,-1)))
+    self.data[k].update_site(tens_in = swapaxes(reshape(smat, (chi,self.data[k].SNdim,-1)),0,1))
     #Overall then we are left with:
     #                     
     #          ---U---  chi  ---Udag.M---O---    
@@ -265,8 +269,6 @@ class mps_block():
     #  (k-1)'th site     ^               k'th site
     #                    ^
     #             truncated k'th bond
-    #
-    #
     
  def reverse_mps(self):
     #reverse the entire mps bock 
@@ -274,17 +276,15 @@ class mps_block():
     self.data.reverse()  
     #then site by site reverse the swap the east and west legs of the sites
     for mpssite in self.data:
-        mpssite.update_site(tens_in = transpose(mpssite.m, (0,2,1)))
+        mpssite.update_site(tens_in = swapaxes(mpssite.m, 1,2))
     
  def canonicalize_mps(self, orth_centre): 
-    #systematically truncate all bonds of mps - orth_centre is point in mps to stop
-    #before truncating from the other end of mps - acheived by reversing mps then using exact same
-    #truncation procedure until the orth_centre. then reverses back to original order
-    for jj in range(1,orth_centre):
-        self.truncate_bond(jj)
+    #systematically truncate all bonds of mps
+    #loop through truncating bonds up until orth_centre
+    for jj in range(1,orth_centre): self.truncate_bond(jj)
+    #reverse mps, truncate remaining bonds from other direction, reverse back
     self.reverse_mps()
-    for jj in range(1,self.N_sites - orth_centre+1):
-        self.truncate_bond(jj)
+    for jj in range(1,self.N_sites - orth_centre+1): self.truncate_bond(jj)
     self.reverse_mps()
     
  def contract_with_mpo(self, mpo_block, orth_centre=None):          
@@ -304,7 +304,8 @@ class mps_block():
     self.reverse_mps() 
     mpo_block.reverse_mpo()
     #if statement for special case of a 1 site mps
-    if self.N_sites>1: self.data[0].contract_with_mpo_site(mpo_block.data[0])   
+    if self.N_sites>1: self.data[0].contract_with_mpo_site(mpo_block.data[0])
+    
     for site in range(1,self.N_sites - orth_centre - int(orth_centre == 0)):
         self.data[site].contract_with_mpo_site(mpo_block.data[site])
         self.truncate_bond(site)
@@ -331,7 +332,7 @@ class mps_block():
     del self.data[-1]
     self.N_sites=self.N_sites-1
 
- def readout(self):
+ def readout2(self):
      #contracts all but the 'present time' leg of ADT/mps and returns 1-leg reduced density matrix
     l=len(self.data)
     #for special case of rank-1 ADT just sum over 1d dummy legs and return
@@ -345,7 +346,23 @@ class mps_block():
         out=dot(nsum(self.data[l-2-jj].m,0),out)
     out=dot(nsum(self.data[0].m,1),out)
     #after the last site, 'out' should now be the reduced density matrix
-    return out    
+    return out 
+ 
+ def readout(self):
+     #contracts all but the 'present time' leg of ADT/mps and returns 1-leg reduced density matrix
+    l=len(self.data)
+    #for special case of rank-1 ADT just sum over 1d dummy legs and return
+    if self.N_sites==1:
+        out=nsum(nsum(self.data[0].m,-1),-1)
+        return out
+    #other wise sum over all but 1-leg of last site, store as out, then successively
+    #sum legs of new end sites to make matrices then multiply into vector 'out'
+    out=nsum(nsum(self.data[l-1].m,0),-1)
+    for jj in range(l-2):
+        out=dot(nsum(self.data[l-2-jj].m,0),out)
+    out=dot(nsum(self.data[0].m,1),out)
+    #after the last site, 'out' should now be the reduced density matrix
+    return out
 
  def bonddims(self):
      #returns a list of the bond dimensions along the mps
