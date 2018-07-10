@@ -1,7 +1,7 @@
 from __future__ import print_function
 import sys
 import ErrorHandling as err
-from numpy import dot, swapaxes, ceil, expand_dims, reshape, eye, linalg, diag
+from numpy import dot, swapaxes, ceil, expand_dims, reshape, eye, linalg
 from numpy import sum as nsum
 import scipy as sp
 
@@ -20,20 +20,6 @@ import scipy as sp
 ##########################################  SITE CLASSES  ###########################################
 ######################################################################################################
 
-
-##########################################################################
-#   Class mpo_site    
-# 
-#   Attributes: 
-#   Sdim, Ndim = dimensions of the South & North legs 
-#                      (i.e. 'local dims' of MPO site)
-#   Wdim, Edim = dimensions of West & East legs (i.e. 'bond dims' of MPO site)
-#   m = the multi-dimensional numpy array representing the tensor
-#
-#   Synopsis:
-#   Defines a single site of MPO - a rank-4 tensor with 4 legs
-#
-########################################################################### 
 class mpo_site(object):
 
  def __init__(self, tens = None):
@@ -50,10 +36,6 @@ class mpo_site(object):
        print("mpo_site: ", e.msg)
        sys.exit()
 
-    except err.MpoSiteInputError as e:
-       print("mpo_site: ", e.msg)
-       sys.exit()
-
  def update(self, tens = None):
 
     try:
@@ -68,21 +50,8 @@ class mpo_site(object):
        print("mpo: update: ", e.msg)
        sys.exit()
 
-    except err.MpoSiteInputError as e:
-       print("mpo: update: ", e.msg)
-       sys.exit()
 
-##########################################################################
-#   Class mps_site    
-# 
-#   Attributes: 
-#   SNdim = dimension of the South-North leg (i.e. 'local dim' of MPS site)
-#   Wdim, Edim = dimensions of West & East legs (i.e. 'bond dims' of MPS site)
-#   m = the multi-dimensional numpy array representing the tensor
-#   Synopsis:
-#   Defines a single site of MPS - a rank-3 tensor with 3 legs
-#
-###########################################################################
+
 class mps_site(object):
 
  def __init__(self,tens = None):
@@ -98,10 +67,6 @@ class mps_site(object):
        print("mps_site: ", e.msg)
        sys.exit()
 
-    except err.MpsSiteInputError as e:
-       print("mps_site: ", e.msg)
-       sys.exit()
-
  def update(self, tens = None):
 
     try:
@@ -112,10 +77,6 @@ class mps_site(object):
        self.m = tens
 
     except err.MpsSiteShapeError as e: 
-       print("mps: update: ", e.msg)
-       sys.exit()
-
-    except err.MpsSiteInputError as e:
        print("mps: update: ", e.msg)
        sys.exit()
 
@@ -149,62 +110,49 @@ class mps_site(object):
 class mpo_block(object):
 
  def __init__(self):
-    #keep track of how long the block is 
+    #set the length of mpo_block
     self.N_sites = 0
+    #initialize list of mpo_sites
     self.sites = []
  
  def insert_site(self, axis, tensor_to_append):
-
-    try:
-       if len(tensor_to_append.shape) != 4: raise err.MpoSiteInputError
-       #Append a new site
-       self.sites.insert(axis,mpo_site(tens = tensor_to_append))
-       self.N_sites = self.N_sites + 1 
-
-    except err.MpoSiteInputError as e:
-       print("append_site: ", e.msg)
-       sys.exit()
-        
- def append_mposite(self,mposite):
-    #Append a new site
-    self.sites.append(mposite)
-    self.N_sites = self.N_sites + 1
+   #insert mpo site at given position 'axis' in block
+   self.sites.insert(axis,mpo_site(tens = tensor_to_append))
+   #record that the block now has 1 more site
+   self.N_sites = self.N_sites + 1 
 
  def reverse_mpo(self):
-
+    #reverse the entire mpo bock 
+    #first reverse the list of sites
     self.sites.reverse()
+    #then site by site reverse the swap the east and west legs of the sites
     for site in self.sites:
         site.update(tens=swapaxes(site.m,2,3))
 
-class mps_block():
+class mps_block(object):
 
  def __init__(self,prec):
     #initialise an mps by stating what precision we are going to keep its bonds truncated to
-    
+    self.precision=prec
     #set the length of mps_block
     self.N_sites = 0
-
     #initialize list of mps_sites
     self.sites = []
-     
-    self.precision=prec
     
  def insert_site(self, axis, tensor_to_append):
-
-    try:
-       if len(tensor_to_append.shape) != 3: raise err.MpsSiteInputError
-       #Append a new site
-       self.sites.insert(axis,mps_site(tens = tensor_to_append))
-       self.N_sites = self.N_sites + 1 
-
-    except err.MpsSiteInputError as e:
-       print("append_site: ", e.msg)
-       sys.exit()
-
-    except err.MpsAppendingError as e:
-       print("append_site: ", e.msg)
-       sys.exit()
- 
+   #insert mps site at given position 'axis' in block
+   self.sites.insert(axis,mps_site(tens = tensor_to_append))
+   #record that the block now has 1 more site
+   self.N_sites = self.N_sites + 1 
+       
+ def reverse_mps(self):
+    #reverse the entire mps bock 
+    #first reverse the list of sites
+    self.sites.reverse()  
+    #then site by site reverse the swap the east and west legs of the sites
+    for site in self.sites:
+        site.update(tens = swapaxes(site.m, 1,2))
+        
  def truncate_bond(self,k):
     #If there are N sites then there are only N-1 bonds so...
     if k<1 or k>self.N_sites-1: return 0
@@ -278,14 +226,6 @@ class mps_block():
     #  (k-1)'th site     ^               k'th site
     #                    ^
     #             truncated k'th bond
-    
- def reverse_mps(self):
-    #reverse the entire mps bock 
-    #first reverse the list of sites
-    self.sites.reverse()  
-    #then site by site reverse the swap the east and west legs of the sites
-    for site in self.sites:
-        site.update(tens = swapaxes(site.m, 1,2))
     
  def canonicalize_mps(self, orth_centre): 
     #systematically truncate all bonds of mps
