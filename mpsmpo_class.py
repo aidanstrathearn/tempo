@@ -192,11 +192,9 @@ class mps_block(object):
     #
     #loop through finding the position of the first singular value that falls below precision
     #since python ordering starts from 0 the position is the number of SV's we want to keep = chi
-    try:
-        chi=next(i for i in range(len(Sigma)) if Sigma[i]/max(Sigma) < self.precision)
+    try: chi=next(i for i in range(len(Sigma)) if Sigma[i]/max(Sigma) < self.precision)
     #If no singular values are small enough then keep em all
-    except(StopIteration):
-        chi=len(Sigma)
+    except(StopIteration): chi=len(Sigma)
     #Chop off the rows of U which dont get multiplied into the chi values we are keeping
     U=U[:, 0:chi]
     theta=dot(U.conj().T,theta)

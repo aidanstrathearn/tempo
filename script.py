@@ -118,7 +118,7 @@ sbm,sz,sx=spin_boson(s,Om,rho,T,Jw)
 #and plot operator expectations to check for convergence
 #can see convergence with pp=30 i.e. lambda_c=0.001*lambda_max
 t0=time()
-for pp in [40,50,60]:
+for pp in [10,20,30,40]:
     sbm.convergence_params(Del,dkmax,pp)
     sbm.prep()
     sbm.prop(100)

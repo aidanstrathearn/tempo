@@ -12,6 +12,8 @@ from pickle import dump
 from time import time
 from scipy.linalg import expm
 from mpsmpo_class import mps_block, mpo_block
+#import pathos.multiprocessing as mp
+from pathos.multiprocessing import ProcessingPool as Pool
 
 
 class temposys(object):
@@ -121,9 +123,11 @@ class temposys(object):
         #sets the convergence parameters
         self.dkmax=dkmax_int
         self.prec=truncprec_int
-        self.dt=dt_float
+        #self.dt=dt_float
         #calculates Makri coefficients if baths have already been added
-        if len(self.intparam)>1: self.intparam[2]=self.getcoeffs(self.intparam[1])
+        if len(self.intparam)>1 and self.dt != dt_float:
+            self.dt=dt_float
+            self.intparam[2]=self.getcoeffs(self.intparam[1])
         #sets free propagator
         self.freeprop=expm(self.ham*self.dt/2).T 
                           
@@ -137,20 +141,24 @@ class temposys(object):
         #retrun list of times and data list
         return [self.statedat[0],od]
     
-    def num_eta(self,T,Jw):
+    def num_eta(self,T,Jw,subdiv=100):
         #function that gives a lineshape eta(t) for a given bath at temperature T,
         #initially in thermal equilibrium  whith correlation function given by Eq.(14)
-        def int1(t): return quad(lambda w: w**(-2)*Jw(w)*(1-cos(w*t)),0,inf)[0]
-        def int2(t): return quad(lambda w: w**(-2)*Jw(w)*(1-cos(w*t))*coth(w/(2*T)),0,inf)[0]
-        def int3(t): return quad(lambda w: w**(-2)*Jw(w)*(sin(w*t)-w*t),0,inf)[0]
+
+        def int1(t): return quad(lambda w: w**(-2)*Jw(w)*(1-cos(w*t)),0,inf,limit=subdiv)[0]
+        
+        def int2(t): return quad(lambda w: w**(-2)*Jw(w)*(1-cos(w*t))*coth(w/(2*T)),0,inf,limit=subdiv)[0]
+        def int3(t): return quad(lambda w: w**(-2)*Jw(w)*(sin(w*t)-w*t),0,inf,limit=subdiv)[0]
         if T==0: 
             def eta(t): return int1(t)+1j*int3(t)
         else:
             def eta(t): return int2(t)+1j*int3(t)
+            
+        return eta
 
-        return eta  
 
     def getcoeffs(self,eta_function):
+        ctime=time()
         #calculates makri coeffs by taking second order finite differences of an eta(t) function
         #this is not how we define them in the paper but is equivalent
         #
@@ -162,12 +170,13 @@ class temposys(object):
         #eta_0=eta(dt)
         #
         #tb is discretized eta(t) in form of a list tb=[eta(dt),eta(2 dt),eta(3 dt), ...]
-        tb=list(map(eta_function,array(range(self.dkmax+2))*self.dt))
+        tb=list(Pool().map(eta_function,array(range(self.dkmax+2))*self.dt))
         #tb=list(map(eta_function,array(range(self.dkmax+2))*self.dt))
         #initial list of eta_dk's: first coeff is just eta_0=eta(dt), this is Eq.(13) bottom
         etab=[tb[1]]
         #now take finite differences on tb to get coeffs
         for jj in range(1,self.dkmax+1): etab.append(tb[jj+1]-2*tb[jj]+tb[jj-1])
+        print('integration time: '+str(round(-ctime+time(),2)))
         return etab
                
     def add_bath(self,b_list):
@@ -290,7 +299,7 @@ class temposys(object):
                 #but we now need to contract one leg of the ADT as described in paper
                 self.mps.contract_end()
             #print out the current point and time it took to contract
-            print("point: " +str(self.point)+'/'+str(kpoints)+'  time: '+str(round(time()-t0,2)))          
+            #print("point: " +str(self.point)+'/'+str(kpoints)+'  time: '+str(round(time()-t0,2)))          
             #obtain mps info of current ADT
             self.diagnostics.append([time()-t0,self.mps.bonddims(),self.mps.totsize()])
             #dump the data for the reduced state to a pickle file
