@@ -5,7 +5,7 @@ Created on Fri Jun 29 10:15:33 2018
 
 @author: aidan
 """
-from numpy import cos,sin,inf,ascontiguousarray,unique,array, expand_dims, kron, eye, dot, ones, outer, zeros, shape, dtype, void
+from numpy import swapaxes,reshape,diag,cos,sin,inf,ascontiguousarray,unique,array, expand_dims, kron, eye, dot, ones, outer, zeros, shape, dtype, void
 from mpmath import coth
 from scipy.integrate import quad
 from pickle import dump
@@ -229,7 +229,7 @@ class temposys(object):
         #[list of unique values,positions in v of the a single instance of each unique val,list same length of v with each element a position in the list of unique vals to map back to v]
         un=unique(v,return_index=True,return_inverse=True)
         #dont explicitly need the unique vals (arent correct anyway since we converted mat to v) - just how many there are
-        return [len(un[0]),un[1],un[2]]
+        return [len(un[0]),array(un[1]),un[2]]
     
     def itab(self,dk):
         #creates the rank-2 tensor I_dk(j,j') of Eq.(11) but without free propagator when dk=1
@@ -248,15 +248,12 @@ class temposys(object):
     def tempotens(self,dk):
         #converts rank-2 itab tensor into a 4-leg tempo mpo_site object taking account of degeneracy
         
-        #initialise tensor
-        iffac=self.itab(dk)
         if dk==1:
-            #if dk=1 then multiply in free propagator - note we also include I_0 here instead of b_0 like in Methods section
-            iffac=(iffac*self.itab(0))         
-            iffac=iffac*dot(self.freeprop,self.freeprop)
+            #if dk=1 then multiply in free propagator - note we also include I_0 here instead of b_0 like in Methods section    
+            iffac=(self.itab(1)*self.itab(0))*dot(self.freeprop,self.freeprop)
             
             #initialise 4-leg tensor dimensions based on degeneracy
-            #for dk=1 we can only use the degeneracy/partial summing technique on legs not connected to freeprop
+            #for dk=1 we can only use the degeneracy/partial summing technique on South and East legs (see mpsmpo_class.py)
             tab=zeros((self.deg[1][0],self.dim**2,self.dim**2,self.deg[0][0]),dtype=complex)
             #loop through assigning elements of 4-leg from elements the 2-leg
             for i1 in range(self.dim**2):
@@ -264,13 +261,15 @@ class temposys(object):
                     tab[self.deg[1][2][i1]][i1][a1][self.deg[0][2][a1]]=iffac[i1][a1]
         
         else:
-            #initialise 4-leg tensor dimensions based on degeneracy
-            tab=zeros((self.deg[1][0],self.deg[1][0],self.deg[0][0],self.deg[0][0]),dtype=complex)
-            #loop through assigning elements of 4-leg from elements the 2-leg
-            for i1 in range(self.dim**2):
-                for a1 in range(self.dim**2):
-                    tab[self.deg[1][2][i1]][self.deg[1][2][i1]][self.deg[0][2][a1]][self.deg[0][2][a1]]=iffac[i1][a1]
-
+            #start by constructing an array out of the unique elements in itab
+            tab=(self.itab(dk)[self.deg[1][1]].T)[self.deg[0][1]].T
+            #combine the 2 legs(axes) into vector and create matrix with this vector as diagonal
+            tab=diag(reshape(tab,(self.deg[1][0]*self.deg[0][0])))
+            #reshape the matrix into a 4-leg
+            tab=reshape(tab,(self.deg[1][0],self.deg[0][0],self.deg[1][0],self.deg[0][0]))
+            #put axes in the right place
+            tab=swapaxes(tab,1,2)
+            
         if dk>=self.dkmax or dk==self.point:
             #if at an end site then sum over external leg and replace with 1d dummy leg
             return expand_dims(dot(tab,ones(tab.shape[3])),-1)
@@ -333,3 +332,5 @@ class temposys(object):
             #dump the data for the reduced state to a pickle file
             dump(self.statedat,open(self.name+"_statedat_dkm"+str(self.dkmax)+"_prec"+str(self.prec)+".pickle",'wb'))
         print('prop time: ' +str(round(time()-ptime,2)))
+        
+        
