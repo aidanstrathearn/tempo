@@ -298,7 +298,7 @@ class temposys(object):
         
         #append insert site to mpo object to give 1-site TEMPO
         self.mpo.insert_site(0,self.tempotens(1))
-        
+        print(type(self.mpo)==mpo_block)
         #system now prepped at point 1
         self.point=1  
         #get the reduced state at point 1
@@ -311,7 +311,8 @@ class temposys(object):
         for k in range(kpoints):       
             t0=time()          
             #contract ADT with TEMPO performing svds and truncating 
-            self.mps.contract_with_mpo(self.mpo)            
+            self.mps.contract_with_mpo(self.mpo)
+            self.mps.insert_site(0,expand_dims(eye(self.dim**2),1))            
             #move the system forward a point and get the state data
             self.point=self.point+1
             self.get_state()

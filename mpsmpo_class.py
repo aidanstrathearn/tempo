@@ -222,53 +222,42 @@ class mps_block(object):
     #                    ^
     #             truncated k'th bond
     
- def canonicalize_mps(self, orth_centre): 
-    #systematically truncate all bonds of mps
-    #loop through truncating bonds up until orth_centre
-    for jj in range(1,orth_centre): self.truncate_bond(jj)
-    #reverse mps, truncate remaining bonds from other direction, reverse back
-    self.reverse_mps()
-    for jj in range(1,self.N_sites - orth_centre+1): self.truncate_bond(jj)
-    self.reverse_mps()
- 
-
+ def trunc_sweep(self,k,mpo=None):
+     #sweep from left to right truncating up to and including kth bond
+     #if given an mpo then contract in its sites and then truncate
+     if type(mpo)==mpo_block:
+         self.sites[0].contract_with_mpo_site(mpo.sites[0])
+         for jj in range(1,k+1): 
+             self.sites[jj].contract_with_mpo_site(mpo.sites[jj])
+             self.truncate_bond(jj)
+     else:
+         for jj in range(1,k+1): 
+             self.truncate_bond(jj)
+             
  def contract_with_mpo(self, mpo_block, orth_centre=None):          
     #function to contract an mps with an mpo site by site performing truncations at each site
-    
+    #for special case of 1-site mps then just contract in mpo site - no truncations
+    if self.N_sites==1:
+        self.sites[0].contract_with_mpo_site(mpo_block.sites[0])
+        return 0
+      
     #default val of orth_centre is the actual centre of the mps
     if orth_centre == None: orth_centre=int(ceil(0.5*self.N_sites))
-    #contract first sites of MPS/MPO together
-    self.sites[0].contract_with_mpo_site(mpo_block.sites[0])
-    #iteratively contract in mpo sites and immediately truncate the 
-    #bond connecting to the previous mps site up until the orth_centre
-    for jj in range(1,orth_centre):
-        self.sites[jj].contract_with_mpo_site(mpo_block.sites[jj])
-        self.truncate_bond(jj)
-    
+    #sweep along contracting in the mpo and truncating to orth_centre-1'th bond
+    self.trunc_sweep(orth_centre - 1,mpo_block) 
     #now reverse the mps and mpo and repeat as above up until all mpo sites have been contracted in
     #and all but one bond has been truncated
     self.reverse_mps() 
-    mpo_block.reverse_mpo()
-    
-    #if statement for special case of a 1 site mps
-    if self.N_sites>1: self.sites[0].contract_with_mpo_site(mpo_block.sites[0])
-    
-    for jj in range(1,self.N_sites - orth_centre - int(orth_centre == 0)):
-        self.sites[jj].contract_with_mpo_site(mpo_block.sites[jj])
-        self.truncate_bond(jj)
-        
+    mpo_block.reverse_mpo()    
+    self.trunc_sweep(self.N_sites - orth_centre - 1,mpo_block)
     #truncate last bond that links the two halfs of the mps we have seperately swept through above  
-    self.truncate_bond(self.N_sites - orth_centre - int(orth_centre == 0))
-    #reverse mps and mpo back to original order
+    self.truncate_bond(self.N_sites - orth_centre)
+    #before reversing back to another sweep along whole mps (not contracting in mpos this time)
+    self.trunc_sweep(self.N_sites)  
+    #reverse back and perform another sweep along whole mps
     self.reverse_mps() 
-    mpo_block.reverse_mpo() 
-
-    #final truncation sweep through mps from one side to the other and back again
-    if (orth_centre > 0): self.canonicalize_mps(0)
-    if (orth_centre < self.N_sites): self.canonicalize_mps(self.N_sites)
-
-    #if mps has a loose west leg with dim!=1 then grow this leg into new site using a delta function
-    if self.sites[0].Wdim != 1: self.insert_site(0,expand_dims(eye(self.sites[0].Wdim),1))
+    mpo_block.reverse_mpo()    
+    self.trunc_sweep(self.N_sites)         
 
  def contract_end(self):
     #contracts one leg of ADT/mps as described in paper
