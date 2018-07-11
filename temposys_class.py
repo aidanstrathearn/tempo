@@ -140,9 +140,14 @@ class temposys(object):
         return [self.statedat[0],od]
     
     def num_eta(self,T,Jw,subdiv=1000):
-        #function that gives a lineshape eta(t) for a given bath at temperature T,
+        #function that numerically calculates lineshape eta(t) for a given bath at temperature T,
         #initially in thermal equilibrium  whith correlation function given by Eq.(14)
-
+        #Important Note: If the integration fails to converge it will only give warnings and
+        #going ahead with the propagation can cause blow up of mps bond dimensions - hence
+        #the subdivisions optional argument which is set high
+        #Because the max subdivisions is set high the integrals can be slow
+        #and we might need to do a couple hundred of them - hence the parallelisation in
+        #self.getcoeffs()
         def intRe(t): 
             return quad(lambda w: w**(-2)*Jw(w)*(1-cos(w*t)),0,inf,limit=subdiv)[0]      
         def intReT(t): 
@@ -160,6 +165,7 @@ class temposys(object):
 
 
     def getcoeffs(self,eta_function):
+        print('calculating eta_dk coefficients')
         ctime=time()
         #calculates makri coeffs by taking second order finite differences of an eta(t) function
         #this is not how we define them in the paper but is equivalent
@@ -172,23 +178,30 @@ class temposys(object):
         #eta_0=eta(dt)
 
         #tb is discretized eta(t) in form of a list tb=[eta(dt),eta(2 dt),eta(3 dt), ...]
-        #tb=list(map(eta_function,array(range(self.dkmax+2))*self.dt))
+        
+        #using Pool from module pathos because it uses dill, not pickle, so can deal with locally
+        #defined functions
         with Pool() as pool:
-            try: 
+            try:
+                #if the pool is already running then reset it - if already use it retains previous results
+                #and we shoudl clear them before going on
                 pool.restart()
             except(AssertionError): 
                 pass
+            #evaluate the eta function at a discrete set of points in parallel
             ite=pool.imap(eta_function,array(range(self.dkmax+2))*self.dt)
+            #close the pool
             pool.close()
-            pool.join()
-            
-        tb=list(ite)
+            pool.join() 
+        #get the list of values   
+        tb=list(ite)      
+        ##### For the non-parallel version use: tb=list(map(eta_function,array(range(self.dkmax+2))*self.dt))'
         
         #initial list of eta_dk's: first coeff is just eta_0=eta(dt), this is Eq.(13) bottom
         etab=[tb[1]]
         #now take finite differences on tb to get coeffs
         for jj in range(1,self.dkmax+1): etab.append(tb[jj+1]-2*tb[jj]+tb[jj-1])
-        print('integration time: '+str(round(-ctime+time(),2)))
+        print('coefficient/integration time: '+str(round(-ctime+time(),2)))
         return etab
                
     def add_bath(self,b_list):
@@ -265,6 +278,7 @@ class temposys(object):
             return tab
                          
     def prep(self):
+        print('preparing temposys for propagation')
         #prepares system to be propagated once params have been set
         
         #initialise mps and mpo - mps needs the truncation precision its going to be kept at
@@ -292,6 +306,7 @@ class temposys(object):
         self.get_state()
         
     def prop(self,kpoints=1):
+        print('propagating')
         ptime=time()
         #propagates the system for kpoints steps - system must be prepped first
         for k in range(kpoints):       
@@ -316,5 +331,5 @@ class temposys(object):
             #obtain mps info of current ADT
             self.diagnostics.append([time()-t0,self.mps.bonddims(),self.mps.totsize()])
             #dump the data for the reduced state to a pickle file
-            dump(self.statedat,open(self.name+"_statedat_dkm"+str(self.dkmax)+"prec"+str(self.prec)+".pickle",'wb'))
+            dump(self.statedat,open(self.name+"_statedat_dkm"+str(self.dkmax)+"_prec"+str(self.prec)+".pickle",'wb'))
         print('prop time: ' +str(round(time()-ptime,2)))

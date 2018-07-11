@@ -1,10 +1,14 @@
-from __future__ import print_function
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Fri Jun 29 10:15:33 2018
+
+@author: aidan, dainius
+"""
 import sys
-import ErrorHandling as err
 from numpy import dot, swapaxes, ceil, expand_dims, reshape, eye, linalg
 from numpy import sum as nsum
-import scipy as sp
-
+from scipy.linalg import svd as la_svd
 #==============================================================================
 # Note we refer to tensors here as having North/South/East/West legs -- graphically these labels
 # have the usual meaning (North=Up, West=Left etc.) when the tensor network 
@@ -14,6 +18,21 @@ import scipy as sp
 # to the left -- python list element 0 in list language
 #==============================================================================
 
+#
+#
+#NOTE: The reshape function retains the order of axes whithin combined axes
+#example: 
+#the 3-leg(axis) tensor Tabc with dimensions da,db,dc can be reshaped to a 2-leg(axis)matrix M{ab}c=reshape(Tabc,(da*db,dc))
+#where {ab} denotes the combined a/b legs(axes). Now take the transpose Mc{ab}=M{ab}c.T
+#Because reshape retains the order of indices, if we want to shape the transpose back into a
+#3-leg tensor we have to do it like Tcab=reshape(Mc{ab},(dc,da,db)), which is not the same order 
+#of a,b,c we started with! to get back to the same order you would then need to use
+#the swapaxes function Tabc=swapaxes(swapaxes(Tcab,(0,1)),(1,2)), also plenty of these below
+#
+#ALSO NOTE: a '-1' in reshape argument is telling it to work out what the dimension should be
+#given the other dimensions involved. This still retains the ordering!
+
+
 ######################################################################################################
 ##########################################  SITE CLASSES  ###########################################
 ######################################################################################################
@@ -22,53 +41,41 @@ class mpo_site(object):
 
  def __init__(self, tens = None):
 
-    try:
-       if len(tens.shape) != 4: raise err.MpoSiteShapeError
-       #get dims from tens & set mpo_site to tens 
-       [self.Sdim,self.Ndim,self.Wdim,self.Edim]=tens.shape
-       self.m = tens
-
-    except err.MpoSiteShapeError as e: 
-       print("mpo_site: ", e.msg)
+   if len(tens.shape) != 4:
+       print('__init__: mpo site needs 4 legs')
        sys.exit()
+   #get dims from tens & set mpo_site to tens 
+   [self.Sdim,self.Ndim,self.Wdim,self.Edim]=tens.shape
+   self.m = tens
 
  def update(self, tens = None):
 
-    try:
-       if len(tens.shape) != 4: raise err.MpoSiteShapeError
-       #get dims from tens & set mpo_site to tens 
-       [self.Sdim,self.Ndim,self.Wdim,self.Edim]=tens.shape
-       self.m = tens
-
-    except err.MpoSiteShapeError as e: 
-       print("mpo: update: ", e.msg)
+   if len(tens.shape) != 4: 
+       print('update: mpo site needs 4 legs')
        sys.exit()
+   #get dims from tens & set mpo_site to tens 
+   [self.Sdim,self.Ndim,self.Wdim,self.Edim]=tens.shape
+   self.m = tens
 
 class mps_site(object):
 
  def __init__(self,tens = None):
 
-    try:
-       if len(tens.shape) != 3: raise err.MpsSiteShapeError
-       #get dims from tens & set mps_site to tens 
-       [self.SNdim,self.Wdim,self.Edim]=tens.shape
-       self.m = tens
-
-    except err.MpsSiteShapeError as e: 
-       print("mps_site: ", e.msg)
+   if len(tens.shape) != 3: 
+       print('__init__: mps site needs 3 legs')
        sys.exit()
+   #get dims from tens & set mps_site to tens 
+   [self.SNdim,self.Wdim,self.Edim]=tens.shape
+   self.m = tens
 
  def update(self, tens = None):
 
-    try:
-       if len(tens.shape) != 3: raise err.MpsSiteShapeError
-       #get dims from tens & set mps_site to tens 
-       [self.SNdim,self.Wdim,self.Edim]=tens.shape
-       self.m = tens
-
-    except err.MpsSiteShapeError as e: 
-       print("mps: update: ", e.msg)
+   if len(tens.shape) != 3:
+       print('update: mps site needs 3 legs')
        sys.exit()
+   #get dims from tens & set mps_site to tens 
+   [self.SNdim,self.Wdim,self.Edim]=tens.shape
+   self.m = tens
 
  def contract_with_mpo_site(self,mposite):
      #this contracts mps site with an mpo site to give another mps site with larger bond dims
@@ -174,9 +181,9 @@ class mps_block(object):
     #this try and except is because sometimes 'gesvd' fails
     #Could also use Arnoldi SVD here but we found the truncation error was worse
     try:
-        U, Sigma, VH = sp.linalg.svd(theta, full_matrices=True,lapack_driver='gesvd')
+        U, Sigma, VH = la_svd(theta, full_matrices=True,lapack_driver='gesvd')
     except(linalg.LinAlgError):
-        U, Sigma, VH = sp.linalg.svd(theta, full_matrices=True,lapack_driver='gesdd')
+        U, Sigma, VH = la_svd(theta, full_matrices=True,lapack_driver='gesdd')
     #Sigma here is list of singular values in non-increasing order rather than a diagonal matrix
         
     #TRUNCATION: this is actually on the unitary U rather than the singular values S
@@ -223,7 +230,8 @@ class mps_block(object):
     self.reverse_mps()
     for jj in range(1,self.N_sites - orth_centre+1): self.truncate_bond(jj)
     self.reverse_mps()
-    
+ 
+
  def contract_with_mpo(self, mpo_block, orth_centre=None):          
     #function to contract an mps with an mpo site by site performing truncations at each site
     
@@ -238,14 +246,17 @@ class mps_block(object):
         self.truncate_bond(jj)
     
     #now reverse the mps and mpo and repeat as above up until all mpo sites have been contracted in
+    #and all but one bond has been truncated
     self.reverse_mps() 
     mpo_block.reverse_mpo()
+    
     #if statement for special case of a 1 site mps
     if self.N_sites>1: self.sites[0].contract_with_mpo_site(mpo_block.sites[0])
     
     for jj in range(1,self.N_sites - orth_centre - int(orth_centre == 0)):
         self.sites[jj].contract_with_mpo_site(mpo_block.sites[jj])
         self.truncate_bond(jj)
+        
     #truncate last bond that links the two halfs of the mps we have seperately swept through above  
     self.truncate_bond(self.N_sites - orth_centre - int(orth_centre == 0))
     #reverse mps and mpo back to original order
@@ -255,6 +266,7 @@ class mps_block(object):
     #final truncation sweep through mps from one side to the other and back again
     if (orth_centre > 0): self.canonicalize_mps(0)
     if (orth_centre < self.N_sites): self.canonicalize_mps(self.N_sites)
+
     #if mps has a loose west leg with dim!=1 then grow this leg into new site using a delta function
     if self.sites[0].Wdim != 1: self.insert_site(0,expand_dims(eye(self.sites[0].Wdim),1))
 
@@ -268,7 +280,7 @@ class mps_block(object):
     #delete the useless end site and change N_sites accordingly
     del self.sites[-1]
     self.N_sites=self.N_sites-1
- 
+
  def readout(self):
      #contracts all but the 'present time' leg of ADT/mps and returns 1-leg reduced density matrix
     #l=len(self.sites)
@@ -285,12 +297,12 @@ class mps_block(object):
 
  def bonddims(self):
      #returns a list of the bond dimensions along the mps
-     bond=[]                
+     bond=[]
      for site in self.sites: bond.append(site.Edim)
      return bond
           
  def totsize(self):
      #returns the total number of elements (i.e. complex numbers) which make up the mps
      size=0
-     for site in self.sites: size=size + site.SNdim*site.Wdim*site.Edim
+     for site in self.sites: size = size + site.SNdim*site.Wdim*site.Edim
      return size
