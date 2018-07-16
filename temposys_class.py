@@ -5,7 +5,7 @@ Created on Fri Jun 29 10:15:33 2018
 
 @author: aidan
 """
-from numpy import swapaxes,reshape,diag,cos,sin,inf,ascontiguousarray,unique,array, expand_dims, kron, eye, dot, ones, outer, zeros, shape, dtype, void
+from numpy import exp,swapaxes,reshape,diag,cos,sin,inf,ascontiguousarray,unique,array, expand_dims, kron, eye, dot, ones, outer, zeros, shape, dtype, void
 from mpmath import coth
 from scipy.integrate import quad
 from pickle import dump
@@ -13,8 +13,122 @@ from time import time
 from scipy.linalg import expm
 from mpsmpo_class import mps_block, mpo_block
 from pathos.multiprocessing import ProcessingPool as Pool
+import sys
 
+class bath(object):
+    def __init__(self,op,Jw=0,T=0,eta=None):
+        self.dim=len(op)
+        self.comm=kron(op,eye(self.dim)) - kron(eye(self.dim),op.T)
+        self.acomm=kron(op,eye(self.dim)) + kron(eye(self.dim),op.T)
+        self.WEdeg=self.row_degeneracy([self.comm.diagonal()])
+        self.NSdeg=self.row_degeneracy([self.comm.diagonal(),self.acomm.diagonal()])
+        if Jw!=0:
+            self.num_eta(T,Jw)
+        else:
+            self.eta_fun=eta
 
+        self.dt=0
+    
+    def num_eta(self,T,Jw,subdiv=1000):
+        #function that numerically calculates lineshape eta(t) for a given bath at temperature T,
+        #initially in thermal equilibrium  whith correlation function given by Eq.(14)
+        #Important Note: If the integration fails to converge it will only give warnings and
+        #going ahead with the propagation can cause blow up of mps bond dimensions - hence
+        #the subdivisions optional argument which is set high
+        #Because the max subdivisions is set high the integrals can be slow
+        #and we might need to do a couple hundred of them - hence the parallelisation in
+        #self.disc_eta()
+        def intRe(t): 
+            return quad(lambda w: w**(-2)*Jw(w)*(1-cos(w*t)),0,inf,limit=subdiv)[0]      
+        def intReT(t): 
+            return quad(lambda w: w**(-2)*Jw(w)*(1-cos(w*t))*coth(w/(2*T)),0,inf,limit=subdiv)[0]
+        def intIm(t): 
+            return quad(lambda w: w**(-2)*Jw(w)*(sin(w*t)-w*t),0,inf,limit=subdiv)[0]
+        
+        def eta(t):      
+            if T==0: 
+                return intRe(t)+1j*intIm(t)
+            else:
+                return intReT(t)+1j*intIm(t)
+            
+        self.eta_fun=eta
+    
+    def discretise(self,dt,kmax=0):
+        ctime=time()
+        if self.dt != dt:
+            print('setting bath timestep')
+            self.dt=dt
+            self.eta_list=[]
+        #tb is discretized eta(t) in form of a list tb=[eta(dt),eta(2 dt),eta(3 dt), ...]
+        if len(self.eta_list)>kmax+2:
+            return 0
+        print('discretising...')
+        #using Pool from module pathos because it uses dill, not pickle, so can deal with locally
+        #defined functions
+        with Pool() as pool:
+            try:
+                #if the pool is already running then reset it - if already use it retains previous results
+                #and we shoudl clear them before going on
+                pool.restart()
+            except(AssertionError): 
+                pass
+            #evaluate the eta function at a discrete set of points in parallel
+            ite=list(pool.imap(self.eta_fun,array(range(len(self.eta_list),kmax+3))*self.dt))
+            #close the pool
+            pool.close()
+            pool.join() 
+        #get the list of values   
+        for el in ite:
+            self.eta_list.append(el)
+        ##### For the non-parallel version use: ite=list(map(self.eta_fun,array(range(self.dkmax+2))*self.dt))'
+        print('time: '+str(round(-ctime+time(),2)))
+               
+    def row_degeneracy(self,matrix):
+        #finds degenerate rows of a matrix
+        #needed instead of just the function 'unique' to find common degeneracy in comms and acomms
+        mat=array(matrix)
+        #some magic here to get a vector v which has same degeneracy structure as rows of matrix mat
+        #I lifted this straight from a stackexchange thread
+        v = ascontiguousarray(mat.T).view(dtype((void, (mat.T).dtype.itemsize * (mat.T).shape[1])))
+        #find degeneracy in v - 'unique' returns:
+        #[list of unique values,positions in v of the a single instance of each unique val,list same length of v with each element a position in the list of unique vals to map back to v]
+        un=unique(v,return_index=True,return_inverse=True)
+        #dont explicitly need the unique vals (arent correct anyway since we converted mat to v) - just how many there are
+        return [len(un[0]),array(un[1]),un[2]]
+    
+    def I_dk(self,dk,unique=False):
+        #creates the rank-2 tensor I_dk(j,j') of Eq.(11) but without free propagator when dk=1
+        #acheives this by taking outer product of two rank-1 vectors to create Eq.(12) as rank-2 tensor
+        #then exponentiate each element
+        #pick out tthe correct eta_dk and the commutator (Om) and acommutator (Op)
+        
+        #calculates makri coeffs by taking second order finite differences of an eta(t) function
+        #this is not how we define them in the paper but is equivalent
+        #
+        #eta function defintion: eta(t)=\int_0^t dt'  \int_0^t' dt'' C(t'')
+        #with C(t) as defined in Eq.(14)
+        #Then Eq.(13) top is written: 
+        #eta_dk=( eta(dt (dk+1))-eta(dt dk) ) - ( eta(dt dk)-eta(dt (dk-1)) )
+        #and Eq.(13) bottom:
+        #eta_0=eta(dt)
+        Om=self.comm.diagonal()
+        Op=self.acomm.diagonal()
+        #if len(self.eta_list)<dk+2:
+        #    self.discretise(self.dt)
+        if dk==0:
+            eta_dk=self.eta_list[1]
+            Idk=exp(-Om*(eta_dk.real*Om+1j*eta_dk.imag*Op))
+            if unique:
+                Idk=Idk[self.NSdeg[1]]
+        else:
+            eta_dk=self.eta_list[dk+1]-2*self.eta_list[dk]+self.eta_list[dk-1]
+            Idk=exp(-outer(eta_dk.real*Om+1j*eta_dk.imag*Op,Om))
+            if unique:
+                Idk=(Idk[self.NSdeg[1]].T)[self.WEdeg[1]].T
+        
+        return Idk
+
+            
 class temposys(object):
     def __init__(self,hilbert_dim=2):
         #initialise system object with hilbert space dimension d=hilbert_dim
@@ -24,19 +138,9 @@ class temposys(object):
         #acts on d^2 size vector so has dimension (d^2,d^2)
         self.ham=zeros((self.dim**2,self.dim**2)) 
         
-        #intialise list that will contain all info about bath coupling
-        #--intparam[0]=commutator/anticommutator superoperators of system operator coupled to bath
-        #--intparam[1]=the lineshape function, eta(t), of the bath
-        #--intparam[2]=the makri coefficients eta_{kk'}, given by second order finite differences on eta(t)       
-        self.intparam=[]                    
-        
-        #self.deg will contain degeneracy info of tempo site tensors:
-        #for vertical and horizontal legs of tensor separately:
-        #--the number of unique elements
-        #--the positions in the multidimensional array of a single occurance of each unique element
-        #--an array the same size as the full tensor, whose elements are the positions in the list 
-        #of unique elements so that the full multidimensional array can be reconstructed
-        self.deg=[]
+        #self.b will be a bath object which is used to biuld TEMPO tensors
+        self.b=None                   
+
         
         #instantaneous reduced system density matrix - vectorised
         self.state=array(self.dim**2)
@@ -93,6 +197,7 @@ class temposys(object):
             return 0
         else:
             print('input operator has wrong dims: '+str(shape(op_array)))
+            sys.exit()
 
     def set_state(self,state_array):
         #sets the initial state of the system
@@ -118,18 +223,27 @@ class temposys(object):
         self.statedat[0].append(self.point*self.dt)
         self.statedat[1].append(self.state)
     
-    def convergence_params(self,dt_float,dkmax_int,truncprec_int):
+    
+    def convergence_params(self,dt=0,dk=0,prec=0):
         #sets the convergence parameters
-        self.dkmax=dkmax_int
-        self.prec=truncprec_int
-        #calculates Makri coefficients if baths have already been added
-        if len(self.intparam)>1 and self.dt != dt_float:
-            self.dt=dt_float
-            self.intparam[2]=self.getcoeffs(self.intparam[1])
-        #sets free propagator
-        self.freeprop=expm(self.ham*self.dt/2).T 
-                          
+        #only set dk and prec if they are integers
+        if type(dk)==int and dk>0: 
+            self.dkmax=dk
+        if type(prec)==int and prec>0: 
+            self.prec=prec
+        if dt>0:
+            #if setting dt then also calculate freeprop
+            self.dt=dt
+            self.freeprop=expm(self.ham*self.dt/2).T
+    
+    def add_bath(self,op,Jw=0,T=0,eta=None):
+        #add a bath specifying what operator 'op' it couples to and either
+        #a spectral density and temperature Jw_T=[Jw,T] ot an eta function
+        self.checkdim(op)
+        self.b=bath(op,Jw,T,eta)                        
+    
     def getopdat(self,op):
+        self.checkdim(op)
         #extracts data for time evolution of expectation of hilbert space operator op
         #initialise data list
         od=[]
@@ -138,139 +252,33 @@ class temposys(object):
             od.append(dot(op,da.reshape((self.dim,self.dim))).trace().real)
         #retrun list of times and data list
         return [self.statedat[0],od]
+        
     
-    def num_eta(self,T,Jw,subdiv=1000):
-        #function that numerically calculates lineshape eta(t) for a given bath at temperature T,
-        #initially in thermal equilibrium  whith correlation function given by Eq.(14)
-        #Important Note: If the integration fails to converge it will only give warnings and
-        #going ahead with the propagation can cause blow up of mps bond dimensions - hence
-        #the subdivisions optional argument which is set high
-        #Because the max subdivisions is set high the integrals can be slow
-        #and we might need to do a couple hundred of them - hence the parallelisation in
-        #self.getcoeffs()
-        def intRe(t): 
-            return quad(lambda w: w**(-2)*Jw(w)*(1-cos(w*t)),0,inf,limit=subdiv)[0]      
-        def intReT(t): 
-            return quad(lambda w: w**(-2)*Jw(w)*(1-cos(w*t))*coth(w/(2*T)),0,inf,limit=subdiv)[0]
-        def intIm(t): 
-            return quad(lambda w: w**(-2)*Jw(w)*(sin(w*t)-w*t),0,inf,limit=subdiv)[0]
-        
-        def eta(t):      
-            if T==0: 
-                return intRe(t)+1j*intIm(t)
-            else:
-                return intReT(t)+1j*intIm(t)
-            
-        return eta
-
-
-    def getcoeffs(self,eta_function):
-        print('calculating eta_dk coefficients')
-        ctime=time()
-        #calculates makri coeffs by taking second order finite differences of an eta(t) function
-        #this is not how we define them in the paper but is equivalent
-        #
-        #eta function defintion: eta(t)=\int_0^t dt'  \int_0^t' dt'' C(t'')
-        #with C(t) as defined in Eq.(14)
-        #Then Eq.(13) top is written: 
-        #eta_dk=( eta(dt (dk+1))-eta(dt dk) ) - ( eta(dt dk)-eta(dt (dk-1)) )
-        #and Eq.(13) bottom:
-        #eta_0=eta(dt)
-
-        #tb is discretized eta(t) in form of a list tb=[eta(dt),eta(2 dt),eta(3 dt), ...]
-        
-        #using Pool from module pathos because it uses dill, not pickle, so can deal with locally
-        #defined functions
-        with Pool() as pool:
-            try:
-                #if the pool is already running then reset it - if already use it retains previous results
-                #and we shoudl clear them before going on
-                pool.restart()
-            except(AssertionError): 
-                pass
-            #evaluate the eta function at a discrete set of points in parallel
-            ite=pool.imap(eta_function,array(range(self.dkmax+2))*self.dt)
-            #close the pool
-            pool.close()
-            pool.join() 
-        #get the list of values   
-        tb=list(ite)      
-        ##### For the non-parallel version use: tb=list(map(eta_function,array(range(self.dkmax+2))*self.dt))'
-        
-        #initial list of eta_dk's: first coeff is just eta_0=eta(dt), this is Eq.(13) bottom
-        etab=[tb[1]]
-        #now take finite differences on tb to get coeffs
-        for jj in range(1,self.dkmax+1): etab.append(tb[jj+1]-2*tb[jj]+tb[jj-1])
-        print('coefficient/integration time: '+str(round(-ctime+time(),2)))
-        return etab
-               
-    def add_bath(self,b_list):
-        #attaches a bath to the system
-        #b_list should have form [hilbert space operator coupled to bath,eta(t) of bath]    
-        self.intparam=[[self.comm(b_list[0]).diagonal(),self.acomm(b_list[0]).diagonal()],b_list[1],[]]
-        #print(b_list[1](1))
-        #if the timestep has been set already then calculate Makri coeffs, else leave blank
-        #if statement is to make 'add_bath', 'set_hamiltonian' and 'convergence_params' commute
-        if self.dt>0: 
-            self.intparam[2]=self.getcoeffs(b_list[1])
-        #find degeneracy which allows for partial summing of tensor network
-        #for degeneracy in 'alpha' legs of 4-leg b tensor only need to find degeneracy in commutator superoperator
-        #for degeneracy in 'j' legs need to find common degeneracy in commutators and anticommutators
-        self.deg=[self.row_degeneracy(self.intparam[0][:1]),self.row_degeneracy(self.intparam[0])]
-
-    def row_degeneracy(self,matrix):
-        #finds degenerate rows of a matrix
-        #needed instead of just the function 'unique' to find common degeneracy in comms and acomms
-        mat=array(matrix)
-        #some magic here to get a vector v which has same degeneracy structure as rows of matrix mat
-        #I lifted this straight from a stackexchange thread
-        v = ascontiguousarray(mat.T).view(dtype((void, (mat.T).dtype.itemsize * (mat.T).shape[1])))
-        #find degeneracy in v - 'unique' returns:
-        #[list of unique values,positions in v of the a single instance of each unique val,list same length of v with each element a position in the list of unique vals to map back to v]
-        un=unique(v,return_index=True,return_inverse=True)
-        #dont explicitly need the unique vals (arent correct anyway since we converted mat to v) - just how many there are
-        return [len(un[0]),array(un[1]),un[2]]
-    
-    def itab(self,dk):
-        #creates the rank-2 tensor I_dk(j,j') of Eq.(11) but without free propagator when dk=1
-        #acheives this by taking outer product of two rank-1 vectors to create Eq.(12) as rank-2 tensor
-        #then exponentiate each element
-        #pick out tthe correct eta_dk and the commutator (Om) and acommutator (Op)
-        eta_dk=self.intparam[2][dk]
-        [Om,Op]=self.intparam[0]
-        #take outer product of vectors and exponentiate- element-by-element NOT matrix exponential
-        #yes thats the number e, I think it looks prettier written like this...
-        iffac=2.7182818284590452353602874713527**(outer(eta_dk.real*Om+1j*eta_dk.imag*Op,-Om))
-        #I_0 is a funtion of one varibale - a vector - so take the diagonal of full matrix
-        if dk==0: return iffac.diagonal()
-        else: return iffac
-    
-    def tempotens(self,dk):
-        #converts rank-2 itab tensor into a 4-leg tempo mpo_site object taking account of degeneracy
-        
+    def b_tensor(self,dk):
+        #converts rank-2 itab tensor into a 4-leg tempo mpo_site object taking account of degeneracy       
         if dk==1:
             #if dk=1 then multiply in free propagator - note we also include I_0 here instead of b_0 like in Methods section    
-            iffac=(self.itab(1)*self.itab(0))*dot(self.freeprop,self.freeprop)
+            iffac=(self.b.I_dk(1)*self.b.I_dk(0))*dot(self.freeprop,self.freeprop)
             
             #initialise 4-leg tensor dimensions based on degeneracy
             #for dk=1 we can only use the degeneracy/partial summing technique on South and East legs (see mpsmpo_class.py)
-            tab=zeros((self.deg[1][0],self.dim**2,self.dim**2,self.deg[0][0]),dtype=complex)
+            tab=zeros((self.b.NSdeg[0],self.dim**2,self.dim**2,self.b.WEdeg[0]),dtype=complex)
             #loop through assigning elements of 4-leg from elements the 2-leg
             for i1 in range(self.dim**2):
                 for a1 in range(self.dim**2):
-                    tab[self.deg[1][2][i1]][i1][a1][self.deg[0][2][a1]]=iffac[i1][a1]
+                    tab[self.b.NSdeg[2][i1]][i1][a1][self.b.WEdeg[2][a1]]=iffac[i1][a1]
         
         else:
             #start by constructing an array out of the unique elements in itab
-            tab=(self.itab(dk)[self.deg[1][1]].T)[self.deg[0][1]].T
+            tab=self.b.I_dk(dk,unique=True)
             #combine the 2 legs(axes) into vector and create matrix with this vector as diagonal
-            tab=diag(reshape(tab,(self.deg[1][0]*self.deg[0][0])))
+            tab=diag(reshape(tab,(self.b.NSdeg[0]*self.b.WEdeg[0])))
             #reshape the matrix into a 4-leg
-            tab=reshape(tab,(self.deg[1][0],self.deg[0][0],self.deg[1][0],self.deg[0][0]))
+            tab=reshape(tab,(self.b.NSdeg[0],self.b.WEdeg[0],self.b.NSdeg[0],self.b.WEdeg[0]))
             #put axes in the right place
             tab=swapaxes(tab,1,2)
             
-        if dk>=self.dkmax or dk==self.point:
+        if dk==self.point or (dk==self.dkmax and self.dkmax>0):
             #if at an end site then sum over external leg and replace with 1d dummy leg
             return expand_dims(dot(tab,ones(tab.shape[3])),-1)
         else:        
@@ -288,23 +296,24 @@ class temposys(object):
         #set initial instantaneous state and list of states and times that will be calculated
         self.state=self.istate
         self.statedat=[[0],[self.state],[self.dkmax,self.prec]]
-        
+        self.b.discretise(self.dt,self.dkmax)
         #create initial rank-1 ADT, as in Eq.(17), as an mps object
         #Note only propagating init state dt/2 due to symmetric trotter splitting
         #and using expand dims to turn 1-leg init state into 3-leg tensor with 2 1d dummy indices
         self.mps.insert_site(0,expand_dims(expand_dims(
-                dot(self.state,self.freeprop)*self.itab(0)
+                dot(self.state,self.freeprop)*self.b.I_dk(0)
                                     ,-1),-1))
         
         #append insert site to mpo object to give 1-site TEMPO
-        self.mpo.insert_site(0,self.tempotens(1))
-        print(type(self.mpo)==mpo_block)
+        self.mpo.insert_site(0,self.b_tensor(1))
         #system now prepped at point 1
         self.point=1  
         #get the reduced state at point 1
         self.get_state()
         
     def prop(self,kpoints=1):
+        if self.dkmax==0:
+            self.b.discretise(self.dt,self.point+kpoints+1)
         print('propagating')
         ptime=time()
         #propagates the system for kpoints steps - system must be prepped first
@@ -317,21 +326,22 @@ class temposys(object):
             self.point=self.point+1
             self.get_state()
           
-            if self.point<self.dkmax+1:
+            if self.point<self.dkmax+1 or self.dkmax==0:
                 #while  in the growth stage we need to update the 'K'th site to give it an extra leg
-                self.mpo.sites[-1].update(self.tempotens(self.point-1))
+                self.mpo.sites[-1].update(self.b_tensor(self.point-1))
                 #and then append the new end site
-                self.mpo.insert_site(self.point-1,self.tempotens(self.point))
+                self.mpo.insert_site(self.point-1,self.b_tensor(self.point))
             else:
                 #after the growth stage the TEMPO remains the same at each step of propagation
                 #but we now need to contract one leg of the ADT as described in paper
                 self.mps.contract_end()
             #print out the current point and time it took to contract
-            print(str(self.point)+'/'+str(kpoints)+'  time: '+str(round(time()-t0,2)))          
+            print(str(self.point-1)+'/'+str(kpoints)+'  time: '+str(round(time()-t0,2)))          
             #obtain mps info of current ADT
             self.diagnostics.append([time()-t0,self.mps.bonddims(),self.mps.totsize()])
             #dump the data for the reduced state to a pickle file
             dump(self.statedat,open(self.name+"_statedat_dkm"+str(self.dkmax)+"_prec"+str(self.prec)+".pickle",'wb'))
-        print('prop time: ' +str(round(time()-ptime,2)))
-        
-        
+        print('prop time: ' +str(round(time()-ptime,2)))  
+
+    
+ 

@@ -6,9 +6,10 @@ Created on Fri Jun 29 10:15:33 2018
 @author: aidan, dainius
 """
 import sys
-from numpy import dot, swapaxes, ceil, expand_dims, reshape, eye, linalg
+from numpy import dot, swapaxes, ceil, expand_dims, reshape, linalg
 from numpy import sum as nsum
 from scipy.linalg import svd as la_svd
+
 #==============================================================================
 # Note we refer to tensors here as having North/South/East/West legs -- graphically these labels
 # have the usual meaning (North=Up, West=Left etc.) when the tensor network 
@@ -125,7 +126,20 @@ class mpo_block(object):
     #then site by site reverse the swap the east and west legs of the sites
     for site in self.sites:
         site.update(tens=swapaxes(site.m,2,3))
-
+ 
+ def split(self,k):
+     newmpo=mpo_block()
+     newmpo.sites=self.sites[k:]
+     newmpo.N_sites=self.N_sites-k
+     self.sites=self.sites[:k]
+     self.N_sites=k
+     return newmpo
+ 
+ def connect(self,mpo_block):
+     self.sites=self.sites+mpo_block.sites
+     self.N_sites=self.N_sites+mpo_block.N_sites
+     del mpo_block
+     
 class mps_block(object):
 
  def __init__(self,prec):
@@ -135,7 +149,20 @@ class mps_block(object):
     self.N_sites = 0
     #initialize list of mps_sites
     self.sites = []
-    
+ 
+ def split(self,k):
+     newmps=mps_block(self.precision)
+     newmps.sites=self.sites[k:]
+     newmps.N_sites=self.N_sites-k
+     self.sites=self.sites[:k]
+     self.N_sites=k
+     return newmps
+ 
+ def connect(self,mps_block):
+     self.sites=self.sites+mps_block.sites
+     self.N_sites=self.N_sites+mps_block.N_sites
+     del mps_block
+     
  def insert_site(self, axis, tensor_to_append):
    #insert mps site at given position 'axis' in block
    self.sites.insert(axis,mps_site(tens = tensor_to_append))
@@ -181,9 +208,10 @@ class mps_block(object):
     #this try and except is because sometimes 'gesvd' fails
     #Could also use Arnoldi SVD here but we found the truncation error was worse
     try:
-        U, Sigma, VH = la_svd(theta, full_matrices=True,lapack_driver='gesvd')
+        U, Sigma, _ = la_svd(theta, full_matrices=False,lapack_driver='gesvd')
     except(linalg.LinAlgError):
-        U, Sigma, VH = la_svd(theta, full_matrices=True,lapack_driver='gesdd')
+        U, Sigma, _ = la_svd(theta, full_matrices=False,lapack_driver='gesdd')
+
     #Sigma here is list of singular values in non-increasing order rather than a diagonal matrix
         
     #TRUNCATION: this is actually on the unitary U rather than the singular values S
@@ -208,11 +236,10 @@ class mps_block(object):
     #now retain  (Wdim x SNdim) --U-- chi to become the new (k-1)'th site after reshaping to 
     #separate out west and south legs
     self.sites[k-1].update(tens = reshape(U,(-1,self.sites[k-1].Wdim, chi)))
-    
     #multiply chi --Udag.M-- Edim into the k'th site, practically carried out by converting to a matrix and
     #then using numpy dot
-    smat=dot(theta,reshape(swapaxes(self.sites[k].m,0,1), (self.sites[k].Wdim,-1)))
-    self.sites[k].update(tens = swapaxes(reshape(smat, (chi,self.sites[k].SNdim,-1)),0,1))
+    theta=dot(theta,reshape(swapaxes(self.sites[k].m,0,1), (self.sites[k].Wdim,-1)))
+    self.sites[k].update(tens = swapaxes(reshape(theta, (chi,self.sites[k].SNdim,-1)),0,1))
     #Overall then we are left with:
     #                     
     #          ---U---  chi  ---Udag.M---O---    
@@ -234,29 +261,30 @@ class mps_block(object):
          for jj in range(1,k+1): 
              self.truncate_bond(jj)
              
- def contract_with_mpo(self, mpo_block, orth_centre=None):          
+ def contract_with_mpo(self, mpoblk, orth_centre=None):          
     #function to contract an mps with an mpo site by site performing truncations at each site
     #for special case of 1-site mps then just contract in mpo site - no truncations
     if self.N_sites==1:
-        self.sites[0].contract_with_mpo_site(mpo_block.sites[0])
+        self.sites[0].contract_with_mpo_site(mpoblk.sites[0])
         return 0
       
     #default val of orth_centre is the actual centre of the mps
     if orth_centre == None: orth_centre=int(ceil(0.5*self.N_sites))
+
     #sweep along contracting in the mpo and truncating to orth_centre-1'th bond
-    self.trunc_sweep(orth_centre - 1,mpo_block) 
+    self.trunc_sweep(orth_centre - 1,mpoblk) 
     #now reverse the mps and mpo and repeat as above up until all mpo sites have been contracted in
     #and all but one bond has been truncated
     self.reverse_mps() 
-    mpo_block.reverse_mpo()    
-    self.trunc_sweep(self.N_sites - orth_centre - 1,mpo_block)
+    mpoblk.reverse_mpo()    
+    self.trunc_sweep(self.N_sites - orth_centre - 1,mpoblk)
     #truncate last bond that links the two halfs of the mps we have seperately swept through above  
     self.truncate_bond(self.N_sites - orth_centre)
     #before reversing back to another sweep along whole mps (not contracting in mpos this time)
     self.trunc_sweep(self.N_sites)  
     #reverse back and perform another sweep along whole mps
     self.reverse_mps() 
-    mpo_block.reverse_mpo()    
+    mpoblk.reverse_mpo()    
     self.trunc_sweep(self.N_sites)         
 
  def contract_end(self):
