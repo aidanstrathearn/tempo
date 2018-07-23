@@ -16,34 +16,34 @@ from mpmath import besselj,sinc, cos
 ######### Short Guide ###############
 #####################################
 #This code will solve for dynamics of the reduced system with full system dynamics governed by Eq.(7)
-#for a bath with lineshape function eta(t), given by the twice time-integrated correlation function C(t), Eq.(14)
+#for a bath with spectral density Jw, temperature T and correlation function C(t) as in Eq.(14)
 #All operators must be in a basis where the operator O is diagonal
 #
 #For a reduced system with:
 #--hilbert space dimension d
-#--(diagonal) bath coupling operator O=A
-#--initial state reduced density matrix p0
+#--(diagonal) (d x d) bath coupling operator O=A
+#--initial state (d x d) reduced density matrix p0
 #
 #the set-up is:
 #system=temposys(d)
 #system.set_hamiltonian(H_0)
 #system.set_state(p0)
-#system.add_bath([A,eta])
+#system.add_bath(A,Jw,T)
 #
-#If analytic eta(t) is not known but the spectral density, Jw, define in Eq.(5) and temperature T are, then
-#alternatively use inbuilt numerical integrator: 'system.add_bath([A,system.num_eta(T,Jw)]) 
-#This is slower but is the more 'black box' approach
-#
-#then set the convergence parameters
-#system.convergence_params(Del,pp,K)
+#then set the convergence parameters;
+#system.convergence_params(dt=Del,prec=pp,dk=K)
 #with:
 #--discretisation timestep Del
 #--precision paramter, pp, for performings svds a la Eq.(2) such that lambda_c=lambda_{max}*10**(-pp/10)
 #--memory cutoff length K
 #
+#note the convergence parameters can be set separately i.e. system.convergence_params(dt=Del)
+#and if the memory cutoff K isn't set then a cutoff isnt used. 
+#Del and precision must be set to propagate though
+#
 #Now all that is left is to prepare the system
 #system.prep()
-#and to propagate the ADT n timesteps
+#and to propagate the ADT n timesteps extracting the reduced density matrix at each point using Eq.(28)
 #system.prop(n)
 #
 #After propagation, obtain dynamics of expectation of operator V in the form data=[times_list,data_list]
@@ -54,6 +54,9 @@ from mpmath import besselj,sinc, cos
 #to get the list from the pickle open the file the usual way file=open('filename_statedat ...')
 #and then use pickle load: data=pickle.load(file).
 
+                                           
+                                           
+                                           
 ####################################################
 ############ The Spin Boson Model ##################
 ####################################################
@@ -80,8 +83,7 @@ def spin_boson(S,Om,rho,T,Jw):
     #the symmetric hamiltoniain
     system.set_hamiltonian(Om*Sx)
     system.set_state(rho)
-    #attach the bath - using inbuilt numerical integrator to find eta(t), which is 
-    #the correlation function in Eq.(14), C(t), integrated twice over time from 0 to t
+    #attach the bath
     #  "Let the Spin, see the Boson!" - Paddy McGuinness, hopefully
     system.add_bath(Sz,Jw,T)
     return system, Sz, Sx
@@ -98,9 +100,9 @@ def spin_boson(S,Om,rho,T,Jw):
 #we control through varying the precision parameter.
 
 #This reproduces Fig.2 of the Makri paper, dynamics which are seen to be 
-#converged with dkmax=7, dt=0.25 We use the same dimestep but 
-#no memory cutoff (dkmax=100) and increase the precision to 
-#show how convergence is acheived, similar to increasing dkmax to get convergence in QUAPI. 
+#converged with dkmax=7, dt=0.25 We use the same timestep but 
+#no memory cutoff and increase the precision to #show how convergence is acheived,
+# similar to increasing dkmax to get convergence in QUAPI. 
 
 #First we set up the system for a spin-1/2  (s=1) and set values taking account of
 #factors of 0.5 between pauli and spin operators
@@ -116,12 +118,9 @@ T=0.2
 def Jw(w):
     return 2*a*w*exp(-w/wc)
 
-#now set timestep and kmax
-Del=0.25
-
 #set up the spin boson model and get spin operators
 sbm,sz,sx=spin_boson(s,Om,rho,T,Jw)
-sbm.convergence_params(dt=Del)
+sbm.convergence_params(dt=0.25)
 #propagate for 100 steps using three different values of svd truncation precision
 #and plot operator expectations to check for convergence
 #can see convergence with pp=30 i.e. lambda_c=0.001*lambda_max
@@ -131,8 +130,8 @@ for pp in [10,20,30,40]:
     sbm.prep()
     sbm.prop(100)
     datz=sbm.getopdat(2*sz)
-    datx=sbm.getopdat(sx)
     plt.plot(datz[0],datz[1])
+    #datx=sbm.getopdat(sx)
     #can also plot the Sx observable
     #plt.plot(datx[0],datx[1])
 print('total time: '+str(time()-t0))
@@ -142,16 +141,16 @@ plt.show()
 
 #==============================================================================
 # ###########################################################################################
-# ######### Example 3 - Cavity-Dot-Phonons: Damped Rabi Oscillations
+# ######### Example 2 - Cavity-Dot-Phonons: Damped Rabi Oscillations
 # ###########################################################################################
 # ######### takes ~90secs to run on EliteBook with i7 Core and 16GB RAM
 # ###########################################################################################
-# #A more realistic example - a 2-level system coupled to both a single oscillator and a bath
+# #A more complicated example - a 2-level system coupled to both a single oscillator and a bath
 # #Could model a quantum dot with exciton-phonon interactions placed in a cavity
 # #We use TEMPO to model the phonon bath but treat the cavity mode as part of the reduced system
 # 
 # #This example is to demonstrate how TEMPO can easily deal with a relatively large reduced 
-# #system (8 states) without needing a memory cutoff (points=100, K=100) - impossible using standard QUAPI!!
+# #system (8 states) without needing a memory cutoff - impossible using standard QUAPI!!
 # 
 # #set maximum number of cavity excitations
 # Ncav=3
@@ -187,8 +186,6 @@ plt.show()
 # T=0.0862*4
 # a=0.5
 # 
-# 
-# 
 # #set superohmic spectral density with gaussian decay - standard QD-phonon spectral density
 # def jay(w):
 #     return a*w**3*exp(-(w/(2*wc))**2)
@@ -207,14 +204,9 @@ plt.show()
 # cdp.set_hamiltonian(hami)
 # cdp.set_state(rho)
 # 
-# #attach the bath to the 2-level system - use in-built numerical integrator on spectral density
-# cdp.add_bath2(signum,[jay,T])
-# #cdp.add_bath([signum,cdp.num_eta(T,jay)])
-# #now set convergence parameters
-# Del=0.125
-# K=100
-# pp=50
-# cdp.convergence_params2(Del,K,pp)
+# #attach the bath to the 2-level system and set timestep and precision
+# cdp.add_bath(signum,jay,T)
+# cdp.convergence_params(dt=0.125,prec=50)
 # 
 # #prepare and propagate system for 100 steps
 # t0=time()
@@ -305,7 +297,7 @@ plt.show()
 # 
 # #propagate system for 120 steps at lowest three values of coupling and plot Sz data
 # t0=time()
-# for a in [0.15,0.2,0.25,0.3,0.35,0.4]:
+# for a in [0.15]:
 #     def j1(w):
 #         return 2*a*w*exp(-w/wc)
 #     sbm,sz,sx=spin_boson(s,Om,rho,T,j1)

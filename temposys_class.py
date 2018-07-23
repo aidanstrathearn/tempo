@@ -16,18 +16,46 @@ from pathos.multiprocessing import ProcessingPool as Pool
 import sys
 
 class bath(object):
+    #the reason for a separate class for baths is in anticipation of multiple baths
     def __init__(self,op,Jw=0,T=0,eta=None):
-        self.dim=len(op)
+        #initialise with the reduced system operator the bath couples to 'op'
+        #and either: a spectral density 'Jw' and temperature 'T'
+        #or an analytic eta function 'eta'
+        
+        #get the dimension of the reduced system
+        self.dim=op.shape[0]
+        #construct commutator and anticommutator superoperators from 'op'
         self.comm=kron(op,eye(self.dim)) - kron(eye(self.dim),op.T)
         self.acomm=kron(op,eye(self.dim)) + kron(eye(self.dim),op.T)
+        #from comm and acomm get the degeneracy info for West/East and North/South legs separately
         self.WEdeg=self.row_degeneracy([self.comm.diagonal()])
         self.NSdeg=self.row_degeneracy([self.comm.diagonal(),self.acomm.diagonal()])
+        
+        #either use the spectral density and temperature to numerically obtain eta function
+        #or use the input eta function
         if Jw!=0:
             self.num_eta(T,Jw)
         else:
             self.eta_fun=eta
-
+        #initialse the discretisation timestep
         self.dt=0
+        
+        #initialise list of discrete eta(t) - eta_list=[eta(0),eta(dt),eta(2 dt),..]
+        self.eta_list=[]
+        
+        #################################################################
+        #########Calculation of coefficients defined in Eq.(13)############
+        #############################################################
+        #we define the function eta(t)=\int_0^t dt'  \int_0^t' dt'' C(t'')
+        #with C(t) as defined in Eq.(14)
+        #Then Eq.(13) top is written: 
+        #eta_dk=( eta(dt (dk+1))-eta(dt dk) ) - ( eta(dt dk)-eta(dt (dk-1)) )
+        #and Eq.(13) bottom:
+        #eta_0=eta(dt)
+        #Thus we find eta_dk by calculating eta(t), either numerically or analytically
+        #at a finite number of timesteps and taking finite differences between them.
+        #An alternative, perhaps numerically easier way to get them is to recognise
+        #that actually eta_dk=C(dt dk)dt^2 in the dt->0 limit
     
     def num_eta(self,T,Jw,subdiv=1000):
         #function that numerically calculates lineshape eta(t) for a given bath at temperature T,
@@ -37,7 +65,14 @@ class bath(object):
         #the subdivisions optional argument which is set high
         #Because the max subdivisions is set high the integrals can be slow
         #and we might need to do a couple hundred of them - hence the parallelisation in
-        #self.disc_eta()
+        #self.discretise()
+        
+        #eta function defintion: eta(t)=\int_0^t dt'  \int_0^t' dt'' C(t'')
+        #Time integration over Eq.(14) can be done anayltically leaving an improper
+        #intergal over \omega which we perform numerically
+        
+        #define real and imaginary parts separately and also take temperature=0
+        #as separate special case
         def intRe(t): 
             return quad(lambda w: w**(-2)*Jw(w)*(1-cos(w*t)),0,inf,limit=subdiv)[0]      
         def intReT(t): 
@@ -54,15 +89,23 @@ class bath(object):
         self.eta_fun=eta
     
     def discretise(self,dt,kmax=0):
+        #function to evaluate eta(t) at a discrete set of points with timestep dt
+        #and calculating eta(k dt) up to k=kmax+2 (this is to allow kmax=0 to correspond to using no memory cutoff)
         ctime=time()
+        #check that the timestep is one that has already been used - because we might have already calculated some eta(k*dt)
+        #for a given timestep and want to avoid reevaluting integrals
+        #if a new timestep then reset both internal timestep and the eta list
         if self.dt != dt:
             print('setting bath timestep')
             self.dt=dt
             self.eta_list=[]
-        #tb is discretized eta(t) in form of a list tb=[eta(dt),eta(2 dt),eta(3 dt), ...]
-        if len(self.eta_list)>kmax+2:
-            return 0
+        
+        #if len(self.eta_list)>kmax+2:
+        #    return 0
         print('discretising...')
+        
+        #going to use multiprocessing since we might need hundreds of numerical integrals that
+        #need carried out to high precision
         #using Pool from module pathos because it uses dill, not pickle, so can deal with locally
         #defined functions
         with Pool() as pool:
@@ -72,15 +115,18 @@ class bath(object):
                 pool.restart()
             except(AssertionError): 
                 pass
-            #evaluate the eta function at a discrete set of points in parallel
+            #evaluate the eta function at a discrete set of points using imap
+            #if there are already entries in the list then start from the next
+            #required eta(k*dt) and calculate up to kmax+2
             ite=list(pool.imap(self.eta_fun,array(range(len(self.eta_list),kmax+3))*self.dt))
             #close the pool
             pool.close()
-            pool.join() 
+            pool.join()
+            pool.clear()
         #get the list of values   
         for el in ite:
             self.eta_list.append(el)
-        ##### For the non-parallel version use: ite=list(map(self.eta_fun,array(range(self.dkmax+2))*self.dt))'
+        ##### For the non-parallel version replace the 'with Pool()' section with: ite=list(map(self.eta_fun,array(range(self.dkmax+2))*self.dt))'
         print('time: '+str(round(-ctime+time(),2)))
                
     def row_degeneracy(self,matrix):
@@ -100,30 +146,30 @@ class bath(object):
         #creates the rank-2 tensor I_dk(j,j') of Eq.(11) but without free propagator when dk=1
         #acheives this by taking outer product of two rank-1 vectors to create Eq.(12) as rank-2 tensor
         #then exponentiate each element
-        #pick out tthe correct eta_dk and the commutator (Om) and acommutator (Op)
         
-        #calculates makri coeffs by taking second order finite differences of an eta(t) function
-        #this is not how we define them in the paper but is equivalent
-        #
-        #eta function defintion: eta(t)=\int_0^t dt'  \int_0^t' dt'' C(t'')
-        #with C(t) as defined in Eq.(14)
-        #Then Eq.(13) top is written: 
-        #eta_dk=( eta(dt (dk+1))-eta(dt dk) ) - ( eta(dt dk)-eta(dt (dk-1)) )
-        #and Eq.(13) bottom:
-        #eta_0=eta(dt)
+        #these rank-2 tensors are used to contruct the rank-4 b tensors in Eq.(22)
+
+        #Note this requires O to be diagonal as it just takes diagonal components
         Om=self.comm.diagonal()
         Op=self.acomm.diagonal()
-        #if len(self.eta_list)<dk+2:
-        #    self.discretise(self.dt)
+
         if dk==0:
+            #for dk=0 then I_0(j,j) is really just a function of 1 variable - so
+            #a rank-1 tensor we need - form vector by taking element by element product
+            #and exponential all elements
             eta_dk=self.eta_list[1]
             Idk=exp(-Om*(eta_dk.real*Om+1j*eta_dk.imag*Op))
             if unique:
+                #if just needing the unique value then insert calculated array positions
+                #of a single instance of the uniques to reduce I_dk to its uniques
                 Idk=Idk[self.NSdeg[1]]
         else:
+            #find eta_dk by taking finite difference on the discetised eta(t)
             eta_dk=self.eta_list[dk+1]-2*self.eta_list[dk]+self.eta_list[dk-1]
+            #need rank-2 tensor so take outer product of vectors and exponeniate each element
             Idk=exp(-outer(eta_dk.real*Om+1j*eta_dk.imag*Op,Om))
             if unique:
+                #find the array of only unique values if so desired
                 Idk=(Idk[self.NSdeg[1]].T)[self.WEdeg[1]].T
         
         return Idk
@@ -149,7 +195,9 @@ class temposys(object):
         self.istate=array(self.dim**2)   
         
         self.freeprop=array((self.dim**2,self.dim**2))
+        
         #memory length/maximum length of the mps, this is K in the paper
+        #the initial value dkmax=0 corresponds to special case of using no memory cutoff
         self.dkmax=0
         
         #sets the precision of the singluar value truncation
@@ -157,13 +205,7 @@ class temposys(object):
         #!!!!note that self.prec>150 gives precision comparable to intrinsic numerical error
         #so shouldn't really make it that high!!!!
         self.prec=0                         
-        
-        #list containing info about computation time and size of tensors at each propagation step:
-        #--time to contract mps/mpo
-        #--list of bond dimensions along mps
-        #--total number of elemenets of mps
-        self.diagnostics=[]
-        
+
         #keeping track of which point of propagation the system is at
         self.point=0                        
         
@@ -255,7 +297,7 @@ class temposys(object):
         
     
     def b_tensor(self,dk):
-        #converts rank-2 itab tensor into a 4-leg tempo mpo_site object taking account of degeneracy       
+        #converts rank-2 I_dk tensor into a 4-leg b tensor Eq.(22) taking account of degeneracy   
         if dk==1:
             #if dk=1 then multiply in free propagator - note we also include I_0 here instead of b_0 like in Methods section    
             iffac=(self.b.I_dk(1)*self.b.I_dk(0))*dot(self.freeprop,self.freeprop)
@@ -296,31 +338,41 @@ class temposys(object):
         #set initial instantaneous state and list of states and times that will be calculated
         self.state=self.istate
         self.statedat=[[0],[self.state],[self.dkmax,self.prec]]
+        
+        #discretise the bath eta(t) function, for dkmax=0 it calculates
+        #eta(k dt) for k=0,1,2 - just enough to get eta_dk for dk=0,1 which we need below
         self.b.discretise(self.dt,self.dkmax)
-        #create initial rank-1 ADT, as in Eq.(17), as an mps object
+        #propagate initial state, multiply in I_0 and insert into
+        #mps to create initial rank-1 ADT, as in Eq.(17)
         #Note only propagating init state dt/2 due to symmetric trotter splitting
         #and using expand dims to turn 1-leg init state into 3-leg tensor with 2 1d dummy indices
         self.mps.insert_site(0,expand_dims(expand_dims(
                 dot(self.state,self.freeprop)*self.b.I_dk(0)
                                     ,-1),-1))
         
-        #append insert site to mpo object to give 1-site TEMPO
-        self.mpo.insert_site(0,self.b_tensor(1))
         #system now prepped at point 1
         self.point=1  
+        #insert site to mpo object to give 1-site TEMPO
+        self.mpo.insert_site(0,self.b_tensor(1))
+        
         #get the reduced state at point 1
         self.get_state()
         
     def prop(self,kpoints=1):
+        #if no dkmax was set then no memory cutoff used and we need to calculate
+        #eta(k*dt) up to N+1 where N is the point the system ends up at after
+        #propagating kpoints
         if self.dkmax==0:
             self.b.discretise(self.dt,self.point+kpoints+1)
         print('propagating')
         ptime=time()
         #propagates the system for kpoints steps - system must be prepped first
-        for k in range(kpoints):       
+        for k in range(kpoints):
+            #print('dims: '+str(self.mps.bonddims()))
             t0=time()          
             #contract ADT with TEMPO performing svds and truncating 
             self.mps.contract_with_mpo(self.mpo)
+            #self.mps.contract_with_mpo(self.mpo)
             self.mps.insert_site(0,expand_dims(eye(self.dim**2),1))            
             #move the system forward a point and get the state data
             self.point=self.point+1
@@ -336,9 +388,7 @@ class temposys(object):
                 #but we now need to contract one leg of the ADT as described in paper
                 self.mps.contract_end()
             #print out the current point and time it took to contract
-            print(str(self.point-1)+'/'+str(kpoints)+'  time: '+str(round(time()-t0,2)))          
-            #obtain mps info of current ADT
-            self.diagnostics.append([time()-t0,self.mps.bonddims(),self.mps.totsize()])
+            print(str(self.point)+'/'+str(self.point+kpoints-k-1)+'  time: '+str(round(time()-t0,2)))
             #dump the data for the reduced state to a pickle file
             dump(self.statedat,open(self.name+"_statedat_dkm"+str(self.dkmax)+"_prec"+str(self.prec)+".pickle",'wb'))
         print('prop time: ' +str(round(time()-ptime,2)))  

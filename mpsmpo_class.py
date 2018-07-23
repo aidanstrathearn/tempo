@@ -9,6 +9,9 @@ import sys
 from numpy import dot, swapaxes, ceil, expand_dims, reshape, linalg
 from numpy import sum as nsum
 from scipy.linalg import svd as la_svd
+from multiprocessing.dummy import Queue, Process
+from time import time
+from pathos.multiprocessing import ProcessingPool as Pool
 
 #==============================================================================
 # Note we refer to tensors here as having North/South/East/West legs -- graphically these labels
@@ -128,18 +131,22 @@ class mpo_block(object):
         site.update(tens=swapaxes(site.m,2,3))
  
  def split(self,k):
+     #splits the mpo retaining first k sites and returning rest as a new mpo
      newmpo=mpo_block()
      newmpo.sites=self.sites[k:]
      newmpo.N_sites=self.N_sites-k
      self.sites=self.sites[:k]
      self.N_sites=k
+     newmpo.reverse_mpo()
      return newmpo
  
  def connect(self,mpo_block):
+     #connects on another mpo
+     mpo_block.reverse_mpo()
      self.sites=self.sites+mpo_block.sites
      self.N_sites=self.N_sites+mpo_block.N_sites
-     del mpo_block
-     
+ 
+    
 class mps_block(object):
 
  def __init__(self,prec):
@@ -151,17 +158,20 @@ class mps_block(object):
     self.sites = []
  
  def split(self,k):
+     #splits the mps retaining first k sites and returning rest as a new mps
      newmps=mps_block(self.precision)
      newmps.sites=self.sites[k:]
      newmps.N_sites=self.N_sites-k
      self.sites=self.sites[:k]
      self.N_sites=k
+     newmps.reverse_mps()
      return newmps
  
  def connect(self,mps_block):
+     #connects on another mps
+     mps_block.reverse_mps()
      self.sites=self.sites+mps_block.sites
      self.N_sites=self.N_sites+mps_block.N_sites
-     del mps_block
      
  def insert_site(self, axis, tensor_to_append):
    #insert mps site at given position 'axis' in block
@@ -216,7 +226,7 @@ class mps_block(object):
         
     #TRUNCATION: this is actually on the unitary U rather than the singular values S
     #We throw away columns of U that get multiplied into entries of the diagonal matrix S which 
-    #are smaller than a specified value to leave chi columns. 
+    #are smaller than a specified value, to leave chi columns. 
     #Then we can approximate the dim1-dimensional identity matrix
     #
     #   dim1 --I-- dim1  ---->   dim1 --U-- chi --Udag-- dim1  
@@ -285,10 +295,10 @@ class mps_block(object):
     #reverse back and perform another sweep along whole mps
     self.reverse_mps() 
     mpoblk.reverse_mpo()    
-    self.trunc_sweep(self.N_sites)         
-
+    self.trunc_sweep(self.N_sites)
+    
  def contract_end(self):
-    #contracts one leg of ADT/mps as described in paper
+    #sums over one leg of ADT/mps as indicated in figures by contraction with a 1 leg semi circle
     #first sum over south and east legs of end site then dot in to second last site and make
     #3d again by giving 1d dummy index wth expand_dims
     self.sites[-2].update(tens=expand_dims(
@@ -299,6 +309,7 @@ class mps_block(object):
     self.N_sites=self.N_sites-1
 
  def readout(self):
+    #print(self.bonddims())
      #contracts all but the 'present time' leg of ADT/mps and returns 1-leg reduced density matrix
     #l=len(self.sites)
     #for special case of rank-1 ADT just sum over 1d dummy legs and return
@@ -315,7 +326,7 @@ class mps_block(object):
  def bonddims(self):
      #returns a list of the bond dimensions along the mps
      bond=[]
-     for site in self.sites: bond.append(site.Edim)
+     for site in self.sites: bond.append([site.SNdim,site.Wdim,site.Edim])
      return bond
           
  def totsize(self):
@@ -323,3 +334,87 @@ class mps_block(object):
      size=0
      for site in self.sites: size = size + site.SNdim*site.Wdim*site.Edim
      return size
+ 
+ def contract_with_mpo2(self, mpoblk):  
+    #multithreading/multiprocessing version of contract_with_mpo
+    #set for multithreading, to use multiprocessing remove .dummy from 'import multiprocessing.dummy'
+    #only works for length 4 or greater
+    if self.N_sites<4:
+        self.contract_with_mpo(mpoblk)
+        return 0
+    
+    #find the mid point of the mps and mpo and split them in 2
+    cen=int(ceil(0.5*self.N_sites))
+    mps2=self.split(cen) 
+    mpo2=mpoblk.split(cen)
+    
+    #contract in the first mpo site with the first mps site for each of mps/mpo
+    self.sites[0].contract_with_mpo_site(mpoblk.sites[0])
+    mps2.sites[0].contract_with_mpo_site(mpo2.sites[0])
+    
+    #define a truncation function to use with multiprocessing
+    #this is basically the same bond truncation function as above so no comments
+    #'pre' and 'cur' are the (k-1)th and kth sites of the mps, mpo is the kth mpo site
+    #we use 'mark' so that we can tell which of the 2 mps we doing manipulations on
+    #q is the multithreading queue where the results end up
+    def trun(pre,cur,mpo,mark,q):
+        cur.contract_with_mpo_site(mpo)
+        theta = reshape(pre.m,(-1,pre.Edim))
+        try:
+            U, Sigma, _ = la_svd(theta, full_matrices=False,lapack_driver='gesvd')
+        except(linalg.LinAlgError):
+            U, Sigma, _ = la_svd(theta, full_matrices=False,lapack_driver='gesdd')  
+        try: chi=next(i for i in range(len(Sigma)) if Sigma[i]/max(Sigma) < self.precision)
+        except(StopIteration): chi=len(Sigma)
+        U=U[:, 0:chi]
+        theta=dot(U.conj().T,theta)
+        pretens = reshape(U,(-1,pre.Wdim, chi))
+        theta=dot(theta,reshape(swapaxes(cur.m,0,1), (cur.Wdim,-1)))
+        curtens = swapaxes(reshape(theta, (chi,cur.SNdim,-1)),0,1)
+        #pre.update(tens=pretens)
+        #cur.update(tens=curtens)
+        q.put([pretens, curtens,mark])
+    
+    for jj in range(1,len(mps2.sites)):
+        #simultaneoulsy sweep along both mps submitting bond truncations on each as separate processes
+        q=Queue()
+        p1=Process(target=trun,args=([self.sites[jj-1],self.sites[jj],mpoblk.sites[jj],1,q]))
+        p2=Process(target=trun,args=([mps2.sites[jj-1],mps2.sites[jj],mpo2.sites[jj],2,q]))
+        #start the processes
+        p1.start(); p2.start()
+        #get the results from the queue
+        sites1=q.get(); sites2=q.get()
+        #no guarantee of what order results go into the queue so check the mark
+        #and set sites1 and sites2 accordingly
+        if sites1[2]==2:
+            sites1,sites2=sites2,sites1
+        #done with processes so join 
+        p1.join(); p2.join()
+        #update the sites of both mps with the results of the truncation
+        self.sites[jj-1].update(tens=sites1[0])
+        self.sites[jj].update(tens=sites1[1])
+        
+        mps2.sites[jj-1].update(tens=sites2[0])
+        mps2.sites[jj].update(tens=sites2[1])
+    
+    #when the full mps has an odd number of sites there is still one bond
+    #left to truncate on the longer of the 2 mps, whish is always 'self'
+    if len(self.sites)!=len(mps2.sites):
+        q=Queue()
+        p=Process(target=trun,args=([self.sites[-2],self.sites[-1],mpoblk.sites[-1],3,q]))
+        p.start()
+        p.join()
+        sites1=q.get()
+        self.sites[-2].update(tens=sites1[0])
+        self.sites[-1].update(tens=sites1[1])
+    
+    #connect back together the mps's and mpo's
+    self.connect(mps2)
+    mpoblk.connect(mpo2)
+    
+    #finish of the contraction by truncating the linking bond and sweeping back and forth the same as before
+    self.reverse_mps()
+    self.truncate_bond(self.N_sites - cen-1)
+    self.trunc_sweep(self.N_sites)
+    self.reverse_mps() 
+    self.trunc_sweep(self.N_sites)
