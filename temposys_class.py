@@ -108,25 +108,28 @@ class bath(object):
         #need carried out to high precision
         #using Pool from module pathos because it uses dill, not pickle, so can deal with locally
         #defined functions
-        with Pool() as pool:
-            try:
-                #if the pool is already running then reset it - if already use it retains previous results
-                #and we shoudl clear them before going on
-                pool.restart()
-            except(AssertionError): 
-                pass
-            #evaluate the eta function at a discrete set of points using imap
-            #if there are already entries in the list then start from the next
-            #required eta(k*dt) and calculate up to kmax+2
-            ite=list(pool.imap(self.eta_fun,array(range(len(self.eta_list),kmax+3))*self.dt))
-            #close the pool
-            pool.close()
-            pool.join()
-            pool.clear()
+#==============================================================================
+#         with Pool() as pool:
+#             try:
+#                 #if the pool is already running then reset it - if already use it retains previous results
+#                 #and we shoudl clear them before going on
+#                 pool.restart()
+#             except(AssertionError): 
+#                 pass
+#             #evaluate the eta function at a discrete set of points using imap
+#             #if there are already entries in the list then start from the next
+#             #required eta(k*dt) and calculate up to kmax+2
+#             ite=list(pool.imap(self.eta_fun,array(range(len(self.eta_list),kmax+3))*self.dt))
+#             #close the pool
+#             pool.close()
+#             pool.join()
+#             pool.clear()
+#==============================================================================
+        ite=list(map(self.eta_fun,array(range(len(self.eta_list),kmax+3))*self.dt))
         #get the list of values   
         for el in ite:
             self.eta_list.append(el)
-        ##### For the non-parallel version replace the 'with Pool()' section with: ite=list(map(self.eta_fun,array(range(self.dkmax+2))*self.dt))'
+        
         print('time: '+str(round(-ctime+time(),2)))
                
     def row_degeneracy(self,matrix):
