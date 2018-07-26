@@ -11,7 +11,7 @@ from numpy import sum as nsum
 from scipy.linalg import svd as la_svd
 from multiprocessing.dummy import Queue, Process
 from time import time
-from pathos.multiprocessing import ProcessingPool as Pool
+#from pathos.multiprocessing import ProcessingPool as Pool
 
 #==============================================================================
 # Note we refer to tensors here as having North/South/East/West legs -- graphically these labels

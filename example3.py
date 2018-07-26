@@ -1,7 +1,8 @@
-from numpy import array, exp
-import matplotlib.pyplot as plt
 from time import time
 from SBM import spin_boson
+from numpy import array, exp
+import matplotlib.pyplot as plt
+
 
 ###########################################################################################
 ######### Fig.2 in Makri & Makarov J. Chem. Phys 102, 4600, (1995) 
