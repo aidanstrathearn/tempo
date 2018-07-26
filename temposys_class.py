@@ -15,6 +15,51 @@ from mpsmpo_class import mps_block, mpo_block
 import sys
 #from pathos.multiprocessing import ProcessingPool as Pool
 
+#####################################
+######### Short Guide ###############
+#####################################
+#This code will solve for dynamics of the reduced system with full system dynamics governed by Eq.(7)
+#for a bath with spectral density Jw, temperature T and correlation function C(t) as in Eq.(14)
+#All operators must be in a basis where the operator O is diagonal
+#
+#First open a new script and import temposys function 
+#
+#from temposys_class import temposys
+#
+#For a reduced system with:
+#--hilbert space dimension d
+#--(diagonal) (d x d) bath coupling operator O=A
+#--initial state (d x d) reduced density matrix p0
+#
+#the set-up is:
+#system=temposys(d)
+#system.set_hamiltonian(H_0)
+#system.set_state(p0)
+#system.add_bath(A,Jw,T)
+#
+#then set the convergence parameters;
+#system.convergence_params(dt=Del,prec=pp,dk=K)
+#with:
+#--discretisation timestep Del
+#--precision paramter, pp, for performings svds a la Eq.(2) such that lambda_c=lambda_{max}*10**(-pp/10)
+#--memory cutoff length K
+#
+#note the convergence parameters can be set separately i.e. system.convergence_params(dt=Del)
+#and if the memory cutoff K isn't set then a cutoff isnt used. 
+#Del and precision must be set to propagate though
+#
+#Now all that is left is to prepare the system
+#system.prep()
+#and to propagate the ADT n timesteps extracting the reduced density matrix at each point using Eq.(28)
+#system.prop(n)
+#
+#After propagation, obtain dynamics of expectation of operator V in the form data=[times_list,data_list]
+#data=system.getopdat(V)
+#
+#The file that is output has the name'filename_statedat_kmax_precision.pickle' and is a pickled
+#pair of lists; one a list of times the other a list of density matrices, still in vectorised form!!
+#to get the list from the pickle open the file the usual way file=open('filename_statedat ...')
+#and then use pickle load: data=pickle.load(file).
 
 class bath(object):
     #the reason for a separate class for baths is in anticipation of multiple baths
@@ -232,7 +277,9 @@ class temposys(object):
     def acomm(self,op):
         #constructs anticommutator superoperator of Hilbert space operator op
         return kron(op,eye(self.dim)) + kron(eye(self.dim),op.T)
-       
+    
+    def diss(self,op):
+        return  kron(op.conjugate(),op)-0.5*self.acomm(dot(op.T.conjugate(),op))
     def set_filename(self,name_string):
         #sets the name of the system
         if type(name_string)==str:
@@ -263,7 +310,16 @@ class temposys(object):
         #propagating row vectors (instead of column), multiplying matrices in from the right
         if self.dt>0: self.freeprop=expm(self.ham*self.dt/2).T 
         #if statement is so that 'set_hamiltonian' and 'convergence_params' commute
-                              
+    
+    def add_dissipation(self,gam,lind):
+        #include lindblad dissipiation in reduced with rate 'gam' and lindblad 
+        #operator 'lind'
+        self.checkdim(lind)
+        #add ther dissipatatpr to hamiltonian superoperator
+        self.ham=self.ham+gam*self.diss(lind)
+        #reset the free propagator
+        if self.dt>0: self.freeprop=expm(self.ham*self.dt/2).T 
+                         
     def get_state(self):
         #readout reduced state from ADT by summing over indices - built in function of mps object
         #also propagate reduced state a final half timestep under free propagation due to symmetric trotter splitting
