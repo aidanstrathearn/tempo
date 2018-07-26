@@ -1,52 +1,47 @@
+from SBM import spin_boson
+#from temposys_class import temposys
 from numpy import array, exp
 import matplotlib.pyplot as plt
 from time import time
-from SBM import spin_boson
 
+#==============================================================================
 ###########################################################################################
-######### Fig.2 in Makri & Makarov J. Chem. Phys 102, 4600, (1995) 
+#########  Fig.2(a) in TEMPO paper
 ###########################################################################################
-######### takes ~25secs to run on HP EliteBook with i7 Core and 16GB RAM
+######### takes ~250secs to run on EliteBook with i7 Core and 16GB RAM
 ###########################################################################################
 
-#This example is to highlight the main difference between TEMPO and QUAPI which
-#is the introduction of a new convergence parmater: the singular value cutoff which in turn
-#we control through varying the precision parameter.
+#this is to show that, although we had to ensure the data in Fig.2(a) of the paper was very 
+#well converged to do scaling analysis near the critical point, we can obtain 
+#qualitavely (and pretty much quantitively) correct dynamics extremely easily at a lower level of convergence
+#
 
-#This reproduces Fig.2 of the Makri paper, dynamics which are seen to be 
-#converged with dkmax=7, dt=0.25 We use the same timestep but 
-#no memory cutoff and increase the precision to #show how convergence is acheived,
-# similar to increasing dkmax to get convergence in QUAPI. 
-
-#First we set up the system for a spin-1/2  (s=1) and set values taking account of
-#factors of 0.5 between pauli and spin operators
+#Set up the spin size and initial up state
 s=1
-Om=2
+Om=1
 rho=array([[1,0],[0,0]])
 
-#set the kondo parameter a, the cutoff frequency wc,the temperature T=1/beta
-#and define the ohmic spectral density Jw
-a=0.1
-wc=7.5
-T=0.2
-def Jw(w):
-    return 2*a*w*exp(-w/wc)
+#set cutoff frequency and temperature
+wc=5
+T=0
 
-#set up the spin boson model and get spin operators
-sbm,sz,sx=spin_boson(s,Om,rho,T,Jw)
-sbm.convergence_params(dt=0.25)
-#propagate for 100 steps using three different values of svd truncation precision
-#and plot operator expectations to check for convergence
-#can see convergence with pp=30 i.e. lambda_c=0.001*lambda_max
+#now set timestep and kmax - the timestep is larger and the cutoff tau_c smaller than
+#used in paper so less converged -- better convergence needed for scaling analysis
+Del=0.06
+K=50
+pp=60
+
+#propagate system for 300 steps for different values of coupling
 t0=time()
-for pp in [10,20,30,40]:
-    sbm.convergence_params(prec=pp)
+for a in [0.1, 0.3, 0.7, 1, 1.2, 1.5]:
+    def j1(w):
+        return 2*a*w*exp(-w/wc)
+    sbm,sz,sx=spin_boson(s,Om,rho,T,j1)
+    sbm.convergence_params(dt=Del,dk=K,prec=pp)
     sbm.prep()
-    sbm.prop(100)
-    datz=sbm.getopdat(2*sz)
+    sbm.prop(300)
+    datz=sbm.getopdat(sz)
     plt.plot(datz[0],datz[1])
-    #datx=sbm.getopdat(sx)
-    #can also plot the Sx observable
-    #plt.plot(datx[0],datx[1])
 print('total time: '+str(time()-t0))
 plt.show()
+#==============================================================================
