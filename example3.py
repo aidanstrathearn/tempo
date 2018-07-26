@@ -1,9 +1,8 @@
 from SBM import spin_boson
-from temposys_class import temposys
-from numpy import array, exp, diag, zeros, sqrt, dot, kron, eye, insert
+#from temposys_class import temposys
+from numpy import array, exp
 import matplotlib.pyplot as plt
 from time import time
-from mpmath import besselj,sinc, cos
 
 #==============================================================================
 ###########################################################################################
@@ -12,7 +11,7 @@ from mpmath import besselj,sinc, cos
 ######### takes ~250secs to run on EliteBook with i7 Core and 16GB RAM
 ###########################################################################################
 
-#this is to show that, although we had to ensure the data in Fig.3(a) of the paper was very 
+#this is to show that, although we had to ensure the data in Fig.2(a) of the paper was very 
 #well converged to do scaling analysis near the critical point, we can obtain 
 #qualitavely (and pretty much quantitively) correct dynamics extremely easily at a lower level of convergence
 #
@@ -32,7 +31,7 @@ Del=0.06
 K=50
 pp=60
 
-#propagate system for 120 steps at lowest three values of coupling and plot Sz data
+#propagate system for 300 steps for different values of coupling
 t0=time()
 for a in [0.1, 0.3, 0.7, 1, 1.2, 1.5]:
     def j1(w):

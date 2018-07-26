@@ -12,8 +12,9 @@ from pickle import dump
 from time import time
 from scipy.linalg import expm
 from mpsmpo_class import mps_block, mpo_block
-from pathos.multiprocessing import ProcessingPool as Pool
 import sys
+#from pathos.multiprocessing import ProcessingPool as Pool
+
 
 class bath(object):
     #the reason for a separate class for baths is in anticipation of multiple baths
@@ -99,33 +100,36 @@ class bath(object):
             print('setting bath timestep')
             self.dt=dt
             self.eta_list=[]
-        
-        #if len(self.eta_list)>kmax+2:
-        #    return 0
+
         print('discretising...')
-        
-        #going to use multiprocessing since we might need hundreds of numerical integrals that
-        #need carried out to high precision
-        #using Pool from module pathos because it uses dill, not pickle, so can deal with locally
-        #defined functions
-#==============================================================================
-#         with Pool() as pool:
-#             try:
-#                 #if the pool is already running then reset it - if already use it retains previous results
-#                 #and we shoudl clear them before going on
-#                 pool.restart()
-#             except(AssertionError): 
-#                 pass
-#             #evaluate the eta function at a discrete set of points using imap
-#             #if there are already entries in the list then start from the next
-#             #required eta(k*dt) and calculate up to kmax+2
-#             ite=list(pool.imap(self.eta_fun,array(range(len(self.eta_list),kmax+3))*self.dt))
-#             #close the pool
-#             pool.close()
-#             pool.join()
-#             pool.clear()
-#==============================================================================
+        #discretise eta_list by evaluating over a list (array) of timesteps using map
         ite=list(map(self.eta_fun,array(range(len(self.eta_list),kmax+3))*self.dt))
+        
+        
+        #integrals can be slow - to speed up with multiprocessing:
+        #  install 'pathos' module and uncomment import line at top
+        #  comment out the ite=list(map(....)) line
+        #  uncomment section below       
+
+        #with Pool() as pool:
+        #    #using Pool from module pathos because it uses dill, not pickle, so can deal with locally
+        #    #defined functions
+        #    try:
+        #        #if the pool is already running then reset it - if already use it retains previous results
+        #        #and we shoudl clear them before going on
+        #        pool.restart()
+        #    except(AssertionError): 
+        #        pass
+        #    #evaluate the eta function at a discrete set of points using imap
+        #    #if there are already entries in the list then start from the next
+        #    #required eta(k*dt) and calculate up to kmax+2
+        #    ite=list(pool.imap(self.eta_fun,array(range(len(self.eta_list),kmax+3))*self.dt))
+        #    #close the pool
+        #    pool.close()
+        #    pool.join()
+        #    pool.clear()
+        
+        
         #get the list of values   
         for el in ite:
             self.eta_list.append(el)
